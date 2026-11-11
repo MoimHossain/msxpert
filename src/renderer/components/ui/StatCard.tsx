@@ -16,6 +16,8 @@ interface StatCardProps {
   hint?: string;
   onClick?: () => void;
   active?: boolean;
+  compact?: boolean;
+  className?: string;
 }
 
 export function StatCard({
@@ -25,21 +27,31 @@ export function StatCard({
   hint,
   onClick,
   active = false,
+  compact = false,
+  className,
 }: StatCardProps) {
   const content = (
     <>
-      <span className="stat-icon" aria-hidden="true">{ICONS[tone]}</span>
+      {!compact ? <span className="stat-icon" aria-hidden="true">{ICONS[tone]}</span> : null}
       <p className="stat-label">{label}</p>
       <p className="stat-value">{value}</p>
       {hint ? <p className="stat-hint">{hint}</p> : null}
     </>
   );
 
+  if (compact) {
+    const classes = classNames("stat-metric", `stat-metric-${tone}`, active && "stat-metric-active", className);
+    return onClick ? (
+      <button type="button" className={classes} onClick={onClick} aria-pressed={active}>{content}</button>
+    ) : <div className={classes}>{content}</div>;
+  }
+
   const classes = classNames(
     "stat-card",
     `stat-card-${tone}`,
     onClick && "stat-card-clickable",
     active && "stat-card-active",
+    className,
   );
 
   return (
@@ -47,6 +59,23 @@ export function StatCard({
       {onClick ? (
         <button type="button" className="stat-card-action" onClick={onClick} aria-pressed={active}>{content}</button>
       ) : content}
+    </Card>
+  );
+}
+
+export function StatGroup({ title, subtitle, tone = "neutral", children }: {
+  title: string;
+  subtitle: string;
+  tone?: Tone;
+  children: ReactNode;
+}) {
+  return (
+    <Card role="region" className={classNames("stat-group", `stat-group-${tone}`)} aria-label={title}>
+      <div className="stat-group-heading">
+        <span className="stat-group-icon" aria-hidden="true">{ICONS[tone]}</span>
+        <div><h2>{title}</h2><p>{subtitle}</p></div>
+      </div>
+      <div className="stat-group-metrics">{children}</div>
     </Card>
   );
 }

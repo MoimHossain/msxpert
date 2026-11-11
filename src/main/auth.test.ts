@@ -41,6 +41,33 @@ afterEach(() => {
 });
 
 describe("MSX session lifecycle", () => {
+  it("uses only the original MSX default scope for browser sign-in and silent renewal", async () => {
+    const account = { homeAccountId: "demo-account" };
+    mocks.accounts.mockResolvedValue([account]);
+    mocks.interactive.mockResolvedValue({ account, accessToken: "test-only" });
+    mocks.silent.mockResolvedValue({ accessToken: "test-only" });
+    const service = auth();
+    await service.signIn();
+    const request = mocks.interactive.mock.calls[0]?.[0];
+    expect(request.scopes).toEqual(["https://microsoftsales.crm.dynamics.com/.default"]);
+    expect(request.extraScopesToConsent).toBeUndefined();
+    await service.getAccessToken();
+    expect(mocks.silent).toHaveBeenCalledWith(expect.objectContaining({ scopes: request.scopes }));
+  });
+
+  it("reports safe Entra diagnostics without returning or logging personal/token details", async () => {
+    mocks.interactive.mockRejectedValue(Object.assign(new Error("AADSTS65002 demo@example.invalid test-only-secret"), {
+      errorCode: "invalid_client",
+    }));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(auth().signIn()).rejects.toThrow(new Error(
+        "This client is not authorized for the requested resource. Use an approved client registration. (AADSTS65002)",
+      ));
+      expect(log).toHaveBeenCalledExactlyOnceWith("AUTH_SIGN_IN_FAILED", "AADSTS65002");
+    } finally { log.mockRestore(); }
+  });
+
   it("verifies saved sign-in silently without opening a browser", async () => {
     mocks.accounts.mockResolvedValue([{ name: "Test", username: "test@example.invalid" }]);
     mocks.silent.mockResolvedValue({ accessToken: "test-only" });
@@ -114,6 +141,20 @@ describe("MSX session lifecycle", () => {
 });
 
 describe("MSAL loopback lifecycle", () => {
+  it("preserves client_info for MSAL token redemption and redirects away from the authorization code", async () => {
+    const controller = new AbortController();
+    const loopback = new AuthLoopback("expected-state", controller.signal);
+    try {
+      const listening = loopback.listenForAuthCode();
+      await vi.waitFor(() => expect(loopback.getRedirectUri()).toContain("localhost:"));
+      const uri = loopback.getRedirectUri().replace("localhost", "127.0.0.1");
+      const response = await fetch(`${uri}/?code=test-only&state=expected-state&client_info=test-only-client-info`, { redirect: "manual" });
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/complete");
+      expect(await listening).toEqual({ code: "test-only", state: "expected-state", client_info: "test-only-client-info" });
+    } finally { loopback.closeServer(); }
+  });
+
   it("rejects unrelated callbacks and releases the loopback server on cancellation", async () => {
     const controller = new AbortController();
     const loopback = new AuthLoopback("expected-state", controller.signal);

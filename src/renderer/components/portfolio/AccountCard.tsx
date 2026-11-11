@@ -59,7 +59,7 @@ export function AccountCard({ account, onOpen, onFetch, onRemove, fetching }: Ac
           <p className="stat-label">Blocked</p>
           <p className="stat-value">{formatNumber(account.blocked)}</p>
         </div>
-        <div>
+        <div className="account-card-monthly-use">
           <p className="stat-label">Monthly use</p>
           <p className="stat-value">{formatCurrency(account.monthlyUse)}</p>
         </div>

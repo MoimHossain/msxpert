@@ -20,6 +20,7 @@ export function SettingsView() {
   const { notify } = useToast();
 
   const [signingOut, setSigningOut] = useState(false);
+  const [refreshingProfile, setRefreshingProfile] = useState(false);
   const [savingScope, setSavingScope] = useState(false);
   const [retention, setRetention] = useState(settings.retentionSnapshots);
   const [savingRetention, setSavingRetention] = useState(false);
@@ -27,6 +28,7 @@ export function SettingsView() {
   const [resetting, setResetting] = useState(false);
   useUpdateBlocker(retention !== settings.retentionSnapshots);
   useUpdateBlocker(resetOpen || resetting);
+  useUpdateBlocker(refreshingProfile);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -69,6 +71,11 @@ export function SettingsView() {
               </div>
             </div>
             {profileError ? <ErrorBanner message={profileError} onRetry={() => void refreshProfile()} /> : null}
+            <Button variant="secondary" busy={refreshingProfile} onClick={() => {
+              setRefreshingProfile(true);
+              void refreshProfile().finally(() => setRefreshingProfile(false));
+            }}>Refresh MSX profile</Button>
+            <p className="field-hint">Profile details come from MSX. When no MSX photo is available, your initials are shown.</p>
             <p>
               Signed in as <strong>{auth.name ?? auth.username ?? "Unknown user"}</strong>
               {auth.username ? ` (${auth.username})` : ""}

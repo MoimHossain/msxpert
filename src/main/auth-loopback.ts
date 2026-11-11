@@ -41,7 +41,10 @@ export class AuthLoopback implements ILoopbackClient {
           "Cache-Control": "no-store",
           "Referrer-Policy": "no-referrer",
         }).end();
-        resolve(code ? { code, state: this.state } : { error: error ?? "access_denied", state: this.state });
+        const clientInfo = url.searchParams.get("client_info");
+        const description = url.searchParams.get("error_description");
+        resolve(code ? { code, state: this.state, ...(clientInfo ? { client_info: clientInfo } : {}) } :
+          { error: error ?? "access_denied", state: this.state, ...(description ? { error_description: description } : {}) });
       });
       this.server.once("error", () => reject(new Error("The local sign-in callback could not start.")));
       this.signal.addEventListener("abort", this.abort, { once: true });

@@ -98,7 +98,7 @@ export class PortfolioService {
     private readonly msx: MsxClient,
     private readonly version: string,
   ) {
-    this.profiles = new ProfileService(store, auth);
+    this.profiles = new ProfileService(store, auth, msx);
     this.territoryImport = new TerritoryImportService(msx, this, auth);
   }
 

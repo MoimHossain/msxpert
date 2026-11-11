@@ -34,10 +34,25 @@ if (!process.versions.electron) {
   let openCount = 0;
   let downloads = 0;
   let imports = 0;
+  let profileRefreshes = 0;
   const demoTerritory = {
     id: "00000000-0000-0000-0000-000000000001", name: "Demo territory",
     accountTeamUnitGroup: "Demo group", salesUnit: "Demo unit", salesGroup: "Demo sales group", fiscalYear: null,
   };
+  const demoAccounts = [
+    { id: "smoke-account", name: "Test account", monthlyUse: 9876543, owners: 31, milestones: 142,
+      onTrack: 106, atRisk: 13, blocked: 23, committed: 60, uncommitted: 82, pendingChanges: 2,
+      lastRun: { ok: true, at: new Date().toISOString(), baseline: true } },
+    { id: "demo-account-2", name: "Demo Financial Services", monthlyUse: 1234567, owners: 17, milestones: 84,
+      onTrack: 69, atRisk: 11, blocked: 4, committed: 34, uncommitted: 50, pendingChanges: 0, lastRun: null },
+    { id: "demo-account-3", name: "Example Holdings", monthlyUse: 9876543210, owners: 206, milestones: 500,
+      onTrack: 420, atRisk: 30, blocked: 50, committed: 180, uncommitted: 320, pendingChanges: 3,
+      lastRun: { ok: false, at: new Date().toISOString(), baseline: false } },
+  ].map((account, index) => ({
+    tpid: index === 0 ? "000" : String(100 + index), msxAccountId: account.id, country: null,
+    createdAt: "2026-11-11T08:00:00.000Z", hasData: true, accountRecords: 20,
+    ...account,
+  }));
   const release = {
     version: "0.4.0", publishedAt: "2026-11-11T08:00:00.000Z",
     notes: "<img src=x onerror=alert('unsafe')> Release notes stay text.", size: 100000000,
@@ -83,6 +98,91 @@ if (!process.versions.electron) {
     })()`);
     assert.ok(clicked, `Enabled button: ${label}`);
   };
+  const hoverThemeToggle = async () => {
+    const readLayout = `(() => {
+      const button = document.querySelector('.theme-toggle').getBoundingClientRect();
+      return {
+        theme: document.documentElement.dataset.theme,
+        savedTheme: localStorage.getItem('csu-console-theme'),
+        height: document.scrollingElement.scrollHeight,
+        width: document.scrollingElement.scrollWidth,
+        rootHeight: document.querySelector('#root').getBoundingClientRect().height,
+        background: getComputedStyle(document.querySelector('.fluent-app-theme')).backgroundColor,
+        pointerReachesButton: Boolean(document.elementFromPoint(button.x + button.width / 2, button.y + button.height / 2)?.closest('.theme-toggle')),
+        button: { x: button.x, y: button.y, width: button.width, height: button.height },
+      };
+    })()`;
+    const before = await js(readLayout);
+    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseMoved", x: before.button.x + before.button.width / 2, y: before.button.y + before.button.height / 2,
+    });
+    await wait(() => js("document.querySelector('.theme-toggle').matches(':hover') && Boolean(document.querySelector('[role=tooltip]'))"));
+    assert.equal(await js(`(() => {
+      const tooltip = getComputedStyle(document.querySelector('[role=tooltip]'));
+      const app = getComputedStyle(document.querySelector('#root .fluent-app-theme'));
+      const token = '--colorNeutralBackground1';
+      return tooltip.getPropertyValue(token).trim().length > 0 &&
+        tooltip.getPropertyValue(token) === app.getPropertyValue(token);
+    })()`), true, "Portaled tooltip retains the selected Fluent theme");
+    for (let sample = 0; sample < 8; sample++) {
+      assert.deepEqual(await js(readLayout), before, "Tooltip hover must preserve the theme, layout, and pointer access to its button");
+      assert.equal(await js("Boolean(document.querySelector('[role=tooltip]'))"), true, "Tooltip stays visible while hovered");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+    await wait(() => js("document.querySelector('[role=tooltip]') === null"));
+    assert.deepEqual(await js(readLayout), before, "Dismissing the tooltip must not change the theme or layout");
+  };
+  const checkPortfolioCards = async () => {
+    assert.deepEqual(await js(`[
+      ...document.querySelectorAll('.portfolio-summary-grid > .stat-group')
+    ].map(group => [...group.querySelectorAll('.stat-label')].map(label => label.textContent))`), [
+      ["Accounts", "Owners", "Milestones", "Monthly use"],
+      ["On track", "At risk", "Blocked", "Committed", "Uncommitted"],
+      ["Stale accounts", "Failed refreshes", "Unreviewed changes"],
+    ], "Exactly three summary cards preserve the requested metric groupings");
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(() => {
+          const cards = [...document.querySelectorAll('.account-card')];
+          return cards.length === 3 && cards.every(card => {
+            const money = card.querySelector('.account-card-monthly-use');
+            const owners = money.nextElementSibling;
+            const moneyBounds = money.getBoundingClientRect();
+            const ownerBounds = owners.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(money.querySelector('.stat-value'));
+            return moneyBounds.right <= ownerBounds.left &&
+              [...range.getClientRects()].every(rect => rect.left >= moneyBounds.left - 1 && rect.right <= moneyBounds.right + 1);
+          });
+        })()`), true, `Full monthly-use values stay in their column and never overlap Owners at ${width}px`);
+        assert.equal(await js(`(() => {
+          const values = [...document.querySelectorAll('.stat-group .stat-value')];
+          return values.every(value => {
+            const bounds = value.parentElement.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(value);
+            return [...range.getClientRects()].every(rect => rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1);
+          });
+        })()`), true, `Grouped summary values remain inside their metric at ${width}px`);
+      }
+    } finally {
+      window.setContentSize(...original);
+      await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
+    }
+  };
+  const clickMetric = async (label) => {
+    assert.equal(await js(`(() => {
+      const metric = [...document.querySelectorAll('button.stat-metric')]
+        .find(button => button.querySelector('.stat-label').textContent === ${JSON.stringify(label)});
+      if (!metric) return false;
+      metric.click(); return true;
+    })()`), true, `Clickable metric: ${label}`);
+  };
   app.whenReady().then(async () => {
     const bootstrap = () => {
       const settings = defaultSettings();
@@ -93,13 +193,9 @@ if (!process.versions.electron) {
         profile: null,
         settings,
         overview: {
-          accounts: configured ? [{
-            id: "smoke-account", tpid: "000", name: "Test account", msxAccountId: "smoke-account", country: null,
-            createdAt: "2026-11-11T08:00:00.000Z", hasData: false, milestones: 0, accountRecords: 0,
-            onTrack: 0, atRisk: 0, blocked: 0, committed: 0, uncommitted: 0, monthlyUse: 0, owners: 0,
-            pendingChanges: 0, lastRun: null,
-          }] : [],
-          totals: { milestones: 0, atRisk: 0, blocked: 0, monthlyUse: 0, pendingChanges: 0 },
+          accounts: configured ? demoAccounts : [],
+          totals: Object.fromEntries(["milestones", "atRisk", "blocked", "monthlyUse", "pendingChanges"]
+            .map(key => [key, configured ? demoAccounts.reduce((sum, account) => sum + account[key], 0) : 0])),
           scope: settings.scope,
         },
         team: [], pods: [], dataPath: process.env.CSU_SMOKE_DATA, version: "0.3.0",
@@ -114,10 +210,13 @@ if (!process.versions.electron) {
       signedIn = true;
       return bootstrap().auth;
     });
-    ipcMain.handle(IPC.refreshProfile, () => ({
-      id: "demo", displayName: "Demo Manager", jobTitle: "Demo role", email: "demo@example.invalid",
-      department: null, officeLocation: null, photoDataUrl: null, updatedAt: new Date().toISOString(),
-    }));
+    ipcMain.handle(IPC.refreshProfile, () => {
+      profileRefreshes++;
+      return {
+        id: "demo", displayName: "Demo Manager", jobTitle: "Demo role", email: "demo@example.invalid",
+        department: null, officeLocation: null, photoDataUrl: null, updatedAt: new Date().toISOString(),
+      };
+    });
     ipcMain.handle(IPC.listTerritories, () => [demoTerritory]);
     ipcMain.handle(IPC.previewTerritoryImport, (_event, ids) => {
       assert.deepEqual(ids, [demoTerritory.id]);
@@ -137,6 +236,14 @@ if (!process.versions.electron) {
       return { added: 1, skipped: 0, failures: [] };
     });
     ipcMain.handle(IPC.getOverview, () => bootstrap().overview);
+    ipcMain.handle(IPC.getAccountState, (_event, id) => ({
+      milestones: [{
+        id: `milestone-${id}`, name: "Demo migration", number: "DEMO-1", date: "2027-01-15",
+        status: "On Track", statusValue: 861980000, commitment: "Committed",
+        ownerId: "demo-owner", ownerName: "Demo Owner", accountId: id, accountName: "Test account",
+        monthlyUse: 1000, monthlyUseFormatted: "$1,000", url: "https://example.invalid/milestone",
+      }],
+    }));
     ipcMain.handle(IPC.resetSetup, () => {
       resetCalls++;
       signedIn = false;
@@ -225,14 +332,42 @@ if (!process.versions.electron) {
       const profile = document.querySelector('.sidebar-profile').getBoundingClientRect();
       return settings.top > innerHeight - 190 && profile.bottom <= innerHeight && profile.top > settings.top;
     })()`), true, "Settings and profile stay anchored at the bottom of the rail");
+    await checkPortfolioCards();
+    await clickMetric("Accounts");
+    await wait(() => js("document.querySelector('.metric-drilldown h2')?.textContent === 'Portfolio accounts'"));
+    assert.equal(await js("document.querySelectorAll('.metric-drilldown tbody tr').length"), 3);
+    await click("Close");
+    await clickMetric("On track");
+    await wait(() => js("Boolean(document.querySelector('.milestone-table-wrap'))"));
+    assert.equal(await js("[...document.querySelectorAll('.milestone-filters select')].some(select => select.value === 'On Track')"), true,
+      "Grouped status metric retains its milestone filter");
+    await click("Close");
+    await clickMetric("Stale accounts");
+    await wait(() => js("document.querySelector('.metric-drilldown h2')?.textContent === 'Stale accounts'"));
+    assert.equal(await js("document.querySelectorAll('.metric-drilldown tbody tr').length"), 1,
+      "Grouped freshness metric preserves its account filtering");
+    await click("Close");
+    window.webContents.debugger.attach("1.3");
+    await hoverThemeToggle();
     const theme = await js("document.documentElement.dataset.theme");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}.png`));
+    }
     await js("document.querySelector('.theme-toggle').click()");
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
+    await checkPortfolioCards();
+    await hoverThemeToggle();
+    window.webContents.debugger.detach();
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
       await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT);
     }
     await click("Settings");
     await wait(() => js("Boolean(document.querySelector('.updates-panel'))"));
+    await wait(() => js("document.querySelector('.settings-profile').innerText.includes('Demo role')"));
+    assert.equal(await js("document.body.innerText.includes('Connect Microsoft 365 profile')"), false);
+    const refreshesBefore = profileRefreshes;
+    await click("Refresh MSX profile");
+    await wait(() => profileRefreshes === refreshesBefore + 1);
     assert.equal(await js("document.querySelector('.startup-updates') === null"), true);
     await click("Check for updates");
     await wait(() => js("document.body.innerText.includes('Version 0.4.0 is available')"));
@@ -270,7 +405,7 @@ if (!process.versions.electron) {
     await click("Open workspace");
     await wait(() => js("Boolean(document.querySelector('.app-shell'))"));
     assert.equal(await js("document.querySelector('.sidebar-profile').innerText.includes('Demo role')"), true);
-    console.log("MCAPS UI smoke passed: aligned date controls, Fluent styling/profile, updates and dirty guards, retained-data Reset, manual fallback, and full sign-in/territory/preview/progress/import onboarding.");
+    console.log("MCAPS UI smoke passed: three grouped KPI cards and drilldowns, non-overlapping large currency values at three widths in both themes, stable tooltip hover and click-to-toggle, MSX profiles, aligned dates, updates/dirty guards, retained-data Reset, and full territory-import onboarding.");
     window.destroy();
     app.exit(0);
   }).catch((error) => {

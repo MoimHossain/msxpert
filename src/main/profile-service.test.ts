@@ -13,19 +13,20 @@ vi.mock("electron", () => ({
   },
 }));
 const fields = {
-  id: "demo", displayName: "Demo User", jobTitle: "Demo role", mail: null,
-  userPrincipalName: "demo@example.invalid", department: "Demo department", officeLocation: null,
+  id: "demo", displayName: "Demo User", jobTitle: "Demo role",
+  email: "demo@example.invalid", department: null, officeLocation: null, photoDataUrl: null,
 };
 
 describe("local profile cache", () => {
   let directory: string;
   let store: VaultStore;
-  const auth = { getAccountKey: vi.fn(), getGraphAccessToken: vi.fn() };
+  const auth = { getAccountKey: vi.fn() };
+  const msx = { getMyProfile: vi.fn() };
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "mcaps-profile-"));
     store = new VaultStore(directory);
     auth.getAccountKey.mockResolvedValue("demo-account");
-    auth.getGraphAccessToken.mockResolvedValue("test-only");
+    msx.getMyProfile.mockResolvedValue(fields);
   });
   afterEach(() => {
     store.close();
@@ -33,46 +34,38 @@ describe("local profile cache", () => {
     vi.resetAllMocks();
     vi.unstubAllGlobals();
   });
-  function responses(photo: Response) {
-    const fetch = vi.fn().mockResolvedValueOnce(Response.json(fields)).mockResolvedValueOnce(photo);
-    vi.stubGlobal("fetch", fetch);
-    return fetch;
-  }
-
   it("persists JSON and photo separately from tokens, and reads cache without network on later launches", async () => {
-    const fetch = responses(new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } }));
-    const service = new ProfileService(store, auth);
+    msx.getMyProfile.mockResolvedValue({ ...fields, photoDataUrl: "data:image/jpeg;base64,AQID" });
+    const service = new ProfileService(store, auth, msx);
     const profile = await service.refresh();
     expect(profile.email).toBe("demo@example.invalid");
     expect(profile.photoDataUrl).toBe("data:image/jpeg;base64,AQID");
     expect(store.get("user-profile", "current")).not.toHaveProperty("photoDataUrl");
     store.close();
     store = new VaultStore(directory);
-    expect(new ProfileService(store, auth).getCached("demo-account")).toEqual(profile);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(new ProfileService(store, auth).getCached("different-account")).toBeNull();
+    expect(new ProfileService(store, auth, msx).getCached("demo-account")).toEqual(profile);
+    expect(msx.getMyProfile).toHaveBeenCalledOnce();
+    expect(new ProfileService(store, auth, msx).getCached("different-account")).toBeNull();
   });
 
-  it("treats a missing Graph photo as a normal initials-avatar fallback and clears an old photo", async () => {
+  it("treats a missing MSX photo as a normal initials-avatar fallback and clears an old photo", async () => {
     store.put("user-profile-photo", "current", "old-photo");
-    responses(new Response(null, { status: 404 }));
-    const profile = await new ProfileService(store, auth).refresh();
+    const profile = await new ProfileService(store, auth, msx).refresh();
     expect(profile.photoDataUrl).toBeNull();
     expect(store.get("user-profile-photo", "current")).toBeNull();
   });
 
   it("keeps the previous complete cache if profile refresh fails", async () => {
-    responses(new Response(null, { status: 404 }));
-    const service = new ProfileService(store, auth);
+    const service = new ProfileService(store, auth, msx);
     const cached = await service.refresh();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    msx.getMyProfile.mockRejectedValue(new Error("MSX request failed with HTTP 403."));
     await expect(service.refresh()).rejects.toThrow("HTTP 403");
     expect(service.getCached("demo-account")).toEqual(cached);
   });
 
   it("clears profile and photo together on reset", async () => {
-    responses(new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } }));
-    const service = new ProfileService(store, auth);
+    msx.getMyProfile.mockResolvedValue({ ...fields, photoDataUrl: "data:image/png;base64,AQ==" });
+    const service = new ProfileService(store, auth, msx);
     await service.refresh();
     service.clear();
     expect(service.getCached("demo-account")).toBeNull();
@@ -80,15 +73,22 @@ describe("local profile cache", () => {
   });
 
   it("does not restore a cache after reset while a refresh was in flight", async () => {
-    const service = new ProfileService(store, auth);
-    let finish!: (value: Response) => void;
-    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }))
-      .mockResolvedValueOnce(new Response(null, { status: 404 })));
+    const service = new ProfileService(store, auth, msx);
+    let finish!: (value: typeof fields) => void;
+    msx.getMyProfile.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const refreshing = service.refresh();
     await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     service.clear();
-    finish(Response.json(fields));
+    finish(fields);
     await expect(refreshing).rejects.toThrow("session changed");
     expect(service.getCached("demo-account")).toBeNull();
+  });
+
+  it("does not cache an MSX response after the signed-in account changes", async () => {
+    auth.getAccountKey.mockResolvedValueOnce("demo-account").mockResolvedValueOnce("different-account");
+    const service = new ProfileService(store, auth, msx);
+    await expect(service.refresh()).rejects.toThrow("session changed");
+    expect(service.getCached("demo-account")).toBeNull();
+    expect(service.getCached("different-account")).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { useLoadedAppData, useAppData } from "../../state/AppDataProvider";
 import { useNavigation } from "../../state/NavigationProvider";
 import { useToast } from "../../state/ToastProvider";
 import { PageHeader } from "../ui/PageHeader";
-import { StatCard } from "../ui/StatCard";
+import { StatCard, StatGroup } from "../ui/StatCard";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
@@ -173,38 +173,44 @@ export function PortfolioView() {
         }
       />
 
-      <div className="stat-grid">
-        <StatCard label="Accounts" value={formatNumber(overview.accounts.length)} tone="info" onClick={() => void openDrilldown("accounts")} active={drilldown === "accounts"} />
-        <StatCard label="Milestones" value={formatNumber(overview.totals.milestones)} onClick={() => void openDrilldown("milestones")} active={drilldown === "milestones"} />
-        <StatCard label="On track" value={formatNumber(totals.onTrack)} tone="positive" onClick={() => void openDrilldown("onTrack")} active={drilldown === "onTrack"} />
-        <StatCard label="At risk" value={formatNumber(overview.totals.atRisk)} tone="warning" onClick={() => void openDrilldown("atRisk")} active={drilldown === "atRisk"} />
-        <StatCard label="Blocked" value={formatNumber(overview.totals.blocked)} tone="critical" onClick={() => void openDrilldown("blocked")} active={drilldown === "blocked"} />
-        <StatCard label="Committed" value={formatNumber(totals.committed)} tone="info" onClick={() => void openDrilldown("committed")} active={drilldown === "committed"} />
-        <StatCard label="Uncommitted" value={formatNumber(totals.uncommitted)} tone="warning" onClick={() => void openDrilldown("uncommitted")} active={drilldown === "uncommitted"} />
-        <StatCard label="Monthly use" value={formatCurrency(overview.totals.monthlyUse)} onClick={() => void openDrilldown("monthlyUse")} active={drilldown === "monthlyUse"} />
-        <StatCard label="Owners" value={formatNumber(totals.owners)} tone="info" onClick={() => void openDrilldown("owners")} active={drilldown === "owners"} />
-        <StatCard
-          label="Stale accounts"
-          value={formatNumber(staleAccountCount(overview.accounts))}
-          tone={staleAccountCount(overview.accounts) > 0 ? "warning" : "neutral"}
-          hint="No successful fetch in 14+ days"
-          onClick={() => void openDrilldown("stale")}
-          active={drilldown === "stale"}
-        />
-        <StatCard
-          label="Failed refreshes"
-          value={formatNumber(failedAccountCount(overview.accounts))}
-          tone={failedAccountCount(overview.accounts) > 0 ? "critical" : "neutral"}
-          onClick={() => void openDrilldown("failed")}
-          active={drilldown === "failed"}
-        />
-        <StatCard
-          label="Unreviewed changes"
-          value={formatNumber(overview.totals.pendingChanges)}
-          tone={overview.totals.pendingChanges > 0 ? "info" : "neutral"}
-          onClick={() => void openDrilldown("unreviewed")}
-          active={drilldown === "unreviewed"}
-        />
+      <div className="portfolio-summary-grid">
+        <StatGroup title="Portfolio overview" subtitle="Your accounts, people and consumption" tone="info">
+          <StatCard compact label="Accounts" value={formatNumber(overview.accounts.length)} tone="info" onClick={() => void openDrilldown("accounts")} active={drilldown === "accounts"} />
+          <StatCard compact label="Owners" value={formatNumber(totals.owners)} tone="info" onClick={() => void openDrilldown("owners")} active={drilldown === "owners"} />
+          <StatCard compact label="Milestones" value={formatNumber(overview.totals.milestones)} onClick={() => void openDrilldown("milestones")} active={drilldown === "milestones"} />
+          <StatCard compact className="stat-metric-wide" label="Monthly use" value={formatCurrency(overview.totals.monthlyUse)} onClick={() => void openDrilldown("monthlyUse")} active={drilldown === "monthlyUse"} />
+        </StatGroup>
+        <StatGroup title="Delivery &amp; commitment" subtitle="Milestone health and pipeline coverage" tone="positive">
+          <StatCard compact label="On track" value={formatNumber(totals.onTrack)} tone="positive" onClick={() => void openDrilldown("onTrack")} active={drilldown === "onTrack"} />
+          <StatCard compact label="At risk" value={formatNumber(overview.totals.atRisk)} tone="warning" onClick={() => void openDrilldown("atRisk")} active={drilldown === "atRisk"} />
+          <StatCard compact label="Blocked" value={formatNumber(overview.totals.blocked)} tone="critical" onClick={() => void openDrilldown("blocked")} active={drilldown === "blocked"} />
+          <StatCard compact className="stat-metric-half" label="Committed" value={formatNumber(totals.committed)} tone="info" onClick={() => void openDrilldown("committed")} active={drilldown === "committed"} />
+          <StatCard compact className="stat-metric-half" label="Uncommitted" value={formatNumber(totals.uncommitted)} tone="warning" onClick={() => void openDrilldown("uncommitted")} active={drilldown === "uncommitted"} />
+        </StatGroup>
+        <StatGroup title="Needs attention" subtitle="Data freshness and your review queue" tone="warning">
+          <StatCard compact
+            label="Stale accounts"
+            value={formatNumber(staleAccountCount(overview.accounts))}
+            tone={staleAccountCount(overview.accounts) > 0 ? "warning" : "neutral"}
+            onClick={() => void openDrilldown("stale")}
+            active={drilldown === "stale"}
+          />
+          <StatCard compact
+            label="Failed refreshes"
+            value={formatNumber(failedAccountCount(overview.accounts))}
+            tone={failedAccountCount(overview.accounts) > 0 ? "critical" : "neutral"}
+            onClick={() => void openDrilldown("failed")}
+            active={drilldown === "failed"}
+          />
+          <StatCard compact
+            label="Unreviewed changes"
+            value={formatNumber(overview.totals.pendingChanges)}
+            tone={overview.totals.pendingChanges > 0 ? "info" : "neutral"}
+            onClick={() => void openDrilldown("unreviewed")}
+            active={drilldown === "unreviewed"}
+          />
+          <p className="stat-group-note">Stale: no successful fetch in 14+ days.</p>
+        </StatGroup>
       </div>
 
       {drilldown ? (

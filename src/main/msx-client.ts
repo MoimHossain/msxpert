@@ -7,7 +7,9 @@ import type {
   ScopeSettings,
   SalesTerritory,
   SystemUserSearchResult,
+  UserProfile,
 } from "../shared/types";
+import { z } from "zod";
 import type { AuthService } from "./auth";
 import { AuthRequiredError } from "./auth";
 import { loadConnectionConfig } from "./connection-config";
@@ -20,6 +22,14 @@ const APP_ID = connection.appId;
 const GUID_CHUNK = 25;
 const MAX_RETRIES = 4;
 const TOP_PARENT_CODE = 861980000;
+const userProfileSchema = z.object({
+  systemuserid: z.guid(),
+  fullname: z.string().nullish(),
+  title: z.string().nullish(),
+  internalemailaddress: z.string().nullish(),
+  domainname: z.string().nullish(),
+  entityimage: z.string().nullish(),
+});
 
 type RawRecord = Record<string, unknown>;
 
@@ -35,6 +45,23 @@ function formatted(record: RawRecord, field: string): string | null {
 
 function stringOrNull(value: unknown): string | null {
   return value == null || value === "" ? null : String(value);
+}
+
+function profilePhoto(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (value.length > 6666668 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    throw new Error("MSX returned an invalid or oversized profile photo.");
+  }
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length > 5000000 || bytes.toString("base64") !== value) {
+    throw new Error("MSX returned an invalid or oversized profile photo.");
+  }
+  const mime = bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) ? "image/jpeg" :
+    bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? "image/png" :
+    ["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString("ascii")) ? "image/gif" :
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP" ? "image/webp" : null;
+  if (!mime) throw new Error("MSX returned an unsupported profile photo.");
+  return `data:${mime};base64,${value}`;
 }
 
 function parentingLevel(record: RawRecord): string | null {
@@ -301,8 +328,27 @@ export class MsxClient {
   }
 
   async getMyUserId(): Promise<string> {
-    const result = await this.request<{ UserId: string }>("WhoAmI");
-    return result.UserId;
+    const result = await this.request<unknown>("WhoAmI");
+    return z.object({ UserId: z.guid() }).parse(result).UserId;
+  }
+
+  async getMyProfile(): Promise<Omit<UserProfile, "updatedAt">> {
+    const id = await this.getMyUserId();
+    const fields = userProfileSchema.parse(await this.request<unknown>(queryPath(`systemusers(${id})`, {
+      "$select": "systemuserid,fullname,title,internalemailaddress,domainname,entityimage",
+    })));
+    if (fields.systemuserid.toLowerCase() !== id.toLowerCase()) {
+      throw new Error("MSX returned a profile for an unexpected user.");
+    }
+    return {
+      id: fields.systemuserid,
+      displayName: stringOrNull(fields.fullname),
+      jobTitle: stringOrNull(fields.title),
+      email: stringOrNull(fields.internalemailaddress) ?? stringOrNull(fields.domainname),
+      department: null,
+      officeLocation: null,
+      photoDataUrl: profilePhoto(fields.entityimage),
+    };
   }
 
   async accountsForTerritory(territoryId: string): Promise<AccountSearchResult[]> {

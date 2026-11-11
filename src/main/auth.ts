@@ -23,6 +23,23 @@ export class AuthRequiredError extends Error {
 class CacheUnlockError extends Error {}
 const CACHE_RECOVERY_MESSAGE = "The protected sign-in cache could not be unlocked. Select Sign in with MSX to replace it.";
 
+function signInFailure(error: unknown): Error {
+  const record = error instanceof Error ? error : null;
+  const detail = record && "errorMessage" in record ? String(record.errorMessage) : record?.message ?? "";
+  const aad = detail.match(/\bAADSTS\d+\b/)?.[0];
+  const value = record && "errorCode" in record ? String(record.errorCode) :
+    record?.cause instanceof Error && "code" in record.cause ? String(record.cause.code) : "";
+  const code = aad ?? (/^[a-zA-Z0-9_]{1,80}$/.test(value) ? value : "authentication_failed");
+  console.error("AUTH_SIGN_IN_FAILED", code);
+  const message = code === "AADSTS50011" ? "The application registration must allow the localhost loopback redirect." :
+    code === "AADSTS65002" ? "This client is not authorized for the requested resource. Use an approved client registration." :
+    code === "AADSTS65001" || code === "consent_required" ? "The requested permission needs consent from your organization." :
+    code === "access_denied" ? "Sign-in was declined. You can try again." :
+    code === "AADSTS70011" || code === "invalid_scope" ? "The requested sign-in scope was rejected." :
+    "Sign-in could not finish. Retry, or use this diagnostic code to investigate.";
+  return new Error(`${message} (${code})`);
+}
+
 function atomicWrite(path: string, data: Buffer): void {
   const temporary = `${path}.tmp`;
   writeFileSync(temporary, data);
@@ -79,11 +96,10 @@ export class AuthService {
   private readonly cache: ProtectedCachePlugin;
   private activeSignIn: AbortController | null = null;
   private readonly scopes: string[];
-  private readonly graphScopes = ["https://graph.microsoft.com/User.Read"];
 
   constructor(dataDirectory: string, connection: ConnectionConfig = loadConnectionConfig(dataDirectory)) {
     this.cache = new ProtectedCachePlugin(dataDirectory);
-    this.scopes = [`${connection.resourceUrl.replace(/\/$/, "")}/user_impersonation`];
+    this.scopes = [`${connection.resourceUrl.replace(/\/$/, "")}/.default`];
     const configuration: Configuration = {
       auth: {
         clientId: connection.clientId,
@@ -162,7 +178,6 @@ export class AuthService {
     const state = randomUUID();
     const result = await this.client.acquireTokenInteractive({
       scopes: this.scopes,
-      extraScopesToConsent: this.graphScopes,
       state,
       loopbackClient: new AuthLoopback(state, controller.signal),
       openBrowser: async (url) => {
@@ -194,9 +209,7 @@ export class AuthService {
         await this.signOut();
         throw new Error(timedOut ? "Sign-in timed out. Select Sign in with MSX to retry." : "Sign-in cancelled. You can try again.");
       }
-      const code = error instanceof Error && "errorCode" in error ? String(error.errorCode) : "";
-      throw new Error(code === "access_denied" ? "Sign-in was declined. Select Sign in with MSX to retry." :
-        "Sign-in failed. Check your connection, tenant/client configuration, MSX access, and delegated Graph User.Read consent, then retry.");
+      throw signInFailure(error);
     } finally {
       clearTimeout(timer);
       this.activeSignIn = null;
@@ -207,10 +220,6 @@ export class AuthService {
 
   async getAccessToken(forceRefresh = false): Promise<string> {
     return this.acquireSilent(this.scopes, forceRefresh);
-  }
-
-  async getGraphAccessToken(forceRefresh = false): Promise<string> {
-    return this.acquireSilent(this.graphScopes, forceRefresh);
   }
 
   private async acquireSilent(scopes: string[], forceRefresh: boolean): Promise<string> {

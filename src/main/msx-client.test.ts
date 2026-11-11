@@ -87,6 +87,57 @@ describe("MsxClient query construction", () => {
     vi.unstubAllGlobals();
   });
 
+  it("loads the current profile exclusively from MSX and uses email and initials fallbacks", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({ UserId: id }))
+      .mockResolvedValueOnce(Response.json({
+        systemuserid: id, fullname: "Demo User", title: "Demo role",
+        internalemailaddress: null, domainname: "demo@example.invalid", entityimage: null,
+      }));
+    vi.stubGlobal("fetch", fetch);
+    const profile = await new MsxClient({ getAccessToken: async () => "test-only" }).getMyProfile();
+    expect(profile).toEqual({
+      id, displayName: "Demo User", jobTitle: "Demo role", email: "demo@example.invalid",
+      department: null, officeLocation: null, photoDataUrl: null,
+    });
+    const urls = fetch.mock.calls.map(([url]) => new URL(String(url)));
+    expect(urls.every((url) => url.origin === "https://microsoftsales.crm.dynamics.com")).toBe(true);
+    expect(urls[0]?.pathname).toBe("/api/data/v9.2/WhoAmI");
+    expect(urls[1]?.pathname).toBe(`/api/data/v9.2/systemusers(${id})`);
+    expect(urls[1]?.searchParams.get("$select")).toBe("systemuserid,fullname,title,internalemailaddress,domainname,entityimage");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts an MSX image, rejects invalid photo payloads, and validates the profile identity", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0u8AAAAASUVORK5CYII=";
+    const fields = { systemuserid: id, entityimage: image };
+    const fetch = vi.fn().mockImplementation(async (url: URL) =>
+      Response.json(url.pathname.endsWith("/WhoAmI") ? { UserId: id } : fields));
+    vi.stubGlobal("fetch", fetch);
+    const client = new MsxClient({ getAccessToken: async () => "test-only" });
+    expect((await client.getMyProfile()).photoDataUrl).toBe(`data:image/png;base64,${image}`);
+    fields.entityimage = "invalid image";
+    await expect(client.getMyProfile()).rejects.toThrow("invalid or oversized");
+    fields.entityimage = "aGVsbG8=";
+    await expect(client.getMyProfile()).rejects.toThrow("unsupported");
+    fields.systemuserid = "00000000-0000-4000-8000-000000000002";
+    await expect(client.getMyProfile()).rejects.toThrow("unexpected user");
+  });
+
+  it("reuses MSX token renewal and throttling retries while retrieving a profile", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const getAccessToken = vi.fn(async (_force?: boolean) => "test-only");
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ UserId: id }))
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(Response.json({ systemuserid: id, internalemailaddress: "demo@example.invalid" }));
+    vi.stubGlobal("fetch", fetch);
+    expect((await new MsxClient({ getAccessToken }).getMyProfile()).email).toBe("demo@example.invalid");
+    expect(getAccessToken).toHaveBeenCalledWith(true);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
   it("URL-encodes structural characters in account searches", async () => {
     let requestedUrl = "";
     vi.stubGlobal(

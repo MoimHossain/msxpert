@@ -18,7 +18,8 @@ export function SignInScreen({ onSignIn, message }: SignInScreenProps) {
     try {
       await onSignIn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, ""));
     } finally {
       setBusy(false);
     }

@@ -19,11 +19,13 @@ Fluent packages are build-time dependencies: Vite bundles the required renderer 
 - `resourceUrl`: HTTPS MSX/Dataverse origin, without an API path.
 - `appId`: Dataverse model-driven application ID used in record links.
 
-Restart the app after changing connection configuration. Never put tokens, passwords, or client secrets in these files. The registration must support public-client authorization-code/PKCE with a `http://localhost` loopback redirect, delegated Dataverse `user_impersonation`, and delegated Microsoft Graph `User.Read` (including any tenant-required admin consent). The inherited client defaults are not a guarantee of Graph consent in every tenant.
+Restart the app after changing connection configuration. Never put tokens, passwords, or client secrets in these files. MSX sign-in uses the original `${resourceUrl}/.default` scope only, with public-client authorization-code/PKCE and a `http://localhost` loopback redirect. It never requests Graph consent as part of MSX sign-in.
 
 MSAL opens the system browser; cancellation and a two-minute timeout release the pending flow so it can be retried. Later launches display the cached profile while silently validating the session. The main workspace remains gated until authentication and onboarding complete. Expired API tokens receive one forced silent refresh; an interaction-required response returns to sign-in rather than opening an unexpected background browser.
 
-Graph `/me` profile JSON and the photo are stored as separate AES-encrypted records/blobs in the existing local SQLite vault, not in the protected MSAL token-cache file. Cached profiles are matched to the signed-in account before display and refreshed in the background. Photo HTTP 404 uses initials; other profile/consent errors remain visible in Settings with retry. Neither tokens nor profile/customer data are logged.
+Profile details come exclusively from MSX: `WhoAmI` identifies the signed-in user, then `systemusers(<UserId>)` supplies `fullname`, `title`, `internalemailaddress` (with `domainname` fallback), and optional `entityimage`. These fields and the read-only request were verified against live MSX. Missing images use initials. Department and office location remain blank because no corresponding dedicated fields were verified; a business unit is not treated as a department.
+
+Profile JSON and the photo are stored as separate AES-encrypted records/blobs in the existing local SQLite vault, not in the protected MSAL token-cache file. Cached profiles are matched to the signed-in account before display and refreshed in the background. **Settings > Refresh MSX profile** retries the same MSX-only requests, using existing expiry and throttling handling. Profile errors remain visible without discarding the previous complete cache. No Microsoft Graph calls, token requests, or consent flows are used. Neither tokens nor profile/customer data are logged.
 
 ### Territory onboarding and verification notes
 
@@ -35,7 +37,7 @@ Also confirmed live: `accounts._territoryid_value`, the TPID attribute `msp_msto
 
 The read-only preview shows territory/top-parent/already-present counts and unresolved accounts before any account is added. Confirmed imports reuse the normal account-add/history-restoration logic, run sequentially under the operation gate, publish progress, and report failures explicitly. Re-previewing a partial import skips successful TPIDs. Previews are short-lived, account-bound, single-use, and invalidated by sign-out/reset. Setup does not finish when the first account lands; the user acknowledges the completed or partial import.
 
-Live verification did not import customer data, reset a real profile, or change permissions. A full interactive login and real Graph profile/photo consent flow still require validation in the target tenant; unit/renderer tests use synthetic data.
+Live verification did not import customer data, reset a real profile, or change permissions. A full interactive login in the rebuilt application still requires validation in the target tenant; unit/renderer tests use synthetic data.
 
 ## Security model
 

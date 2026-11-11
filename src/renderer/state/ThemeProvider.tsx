@@ -59,7 +59,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
   return (
     <ThemeContext.Provider value={value}>
-      <FluentProvider theme={fluent} style={palette} className="fluent-app-theme">
+      {/* Portals inherit theme tokens, not the app's full-height background. */}
+      <FluentProvider applyStylesToPortals={false} theme={fluent} style={palette} className="fluent-app-theme">
         {children}
       </FluentProvider>
     </ThemeContext.Provider>

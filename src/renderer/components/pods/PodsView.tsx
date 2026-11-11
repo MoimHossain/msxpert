@@ -123,7 +123,7 @@ export function PodsView() {
                   <p className="stat-label">Blocked</p>
                   <p className="stat-value">{formatNumber(pod.blocked)}</p>
                 </div>
-                <div>
+                <div className="account-card-monthly-use">
                   <p className="stat-label">Monthly use</p>
                   <p className="stat-value">{formatCurrency(pod.monthlyUse)}</p>
                 </div>
