@@ -2,6 +2,7 @@ import { gt, prerelease, valid } from "semver";
 import type { AppUpdater, CancellationToken, UpdateInfo } from "electron-updater";
 import type { UpdateRelease, UpdateState, UpdateVerification } from "../shared/updates";
 import type { OperationGate } from "./operation-gate";
+import { installerNames } from "../shared/branding";
 
 export interface UpdateJournal {
   lastAttemptAt: string | null;
@@ -46,8 +47,8 @@ export function releaseDetails(current: string, info: UpdateInfo, testing = fals
 
 function validateRelease(info: UpdateInfo): UpdateRelease {
   if ("tag" in info && valid(String(info.tag)) !== valid(info.version)) throw new Error("ERR_UPDATE_VERSION");
-  const expected = `CSU-Console-Setup-${info.version}.exe`;
-  const file = info.files.find((item) => item.url === expected);
+  const names = installerNames(info.version);
+  const file = info.files.find((item) => names.includes(item.url));
   if (!file || !/^[A-Za-z0-9+/]{86}==$/.test(file.sha512) || info.files.length !== 1 ||
     !file.size || !Number.isFinite(file.size) || file.size < 0 ||
     ("packages" in info && info.packages)) {
@@ -117,7 +118,7 @@ export class UpdateService {
       lastCheckedAt: this.journal.lastCheckedAt,
       retryAt: null,
       progress: null,
-      message: options.supported ? options.initialError ?? null : "In-app updates require an installed, signed Windows x64 release.",
+      message: options.supported ? options.initialError ?? null : "In-app updates require an installed Windows x64 release with an approved publisher or an explicit alpha test build.",
       outcome: pending
         ? pending.to === options.version
           ? `Updated to ${options.version}.`

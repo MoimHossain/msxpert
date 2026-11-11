@@ -6,6 +6,7 @@ import { CancellationToken, NsisUpdater } from "electron-updater";
 import { z } from "zod";
 import { IPC } from "../shared/ipc";
 import { RELEASES_URL } from "../shared/updates";
+import { APP_NAME, LEGACY_APP_NAME, installerNames } from "../shared/branding";
 import { OperationGate } from "./operation-gate";
 import { isAlphaTestVersion, UpdateService, type UpdateJournal } from "./update-service";
 import { verifyAuthenticode, verifyChecksum, verifyTestInstallerVersion } from "./update-verification";
@@ -38,7 +39,8 @@ export function createUpdateRuntime(
   const publisher = trust.success ? trust.data.updatePublisher : null;
   const testMarker = z.object({ updateMode: z.literal("unsigned-test") }).safeParse(packageInfo);
   const testing = !publisher && testMarker.success && isAlphaTestVersion(app.getVersion());
-  const installed = existsSync(join(dirname(process.execPath), "Uninstall CSU Console.exe"));
+  const installed = [APP_NAME, LEGACY_APP_NAME].some((name) =>
+    existsSync(join(dirname(process.execPath), `Uninstall ${name}.exe`)));
   const supported = app.isPackaged && installed && process.platform === "win32" &&
     process.arch === "x64" && (publisher !== null || testing);
   const updater = supported ? new NsisUpdater({
@@ -85,8 +87,8 @@ export function createUpdateRuntime(
     },
     cancellationToken: () => new CancellationToken(),
     verifyInstaller: async (path, info) => {
-      const expected = `CSU-Console-Setup-${info.version}.exe`;
-      if ((!publisher && !testing) || basename(path) !== expected) throw new Error("ERR_UPDATE_INTEGRITY_FILENAME");
+      const expected = basename(path);
+      if ((!publisher && !testing) || !installerNames(info.version).includes(expected)) throw new Error("ERR_UPDATE_INTEGRITY_FILENAME");
       const file = info.files.find((item) => item.url === expected);
       if (!file) throw new Error("ERR_UPDATE_METADATA");
       try {

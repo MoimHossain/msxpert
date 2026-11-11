@@ -19,7 +19,7 @@ function atomicWrite(path: string, data: Buffer): void {
 function loadOrCreateKey(dataDirectory: string): Buffer {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error(
-      "Windows data protection is unavailable. CSU Console cannot open its encrypted data store.",
+      "Windows data protection is unavailable. MCAPS Console cannot open its encrypted data store.",
     );
   }
   const keyPath = join(dataDirectory, "vault-key.json");

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Button } from "../ui/Button";
 import { ErrorBanner } from "../ui/ErrorBanner";
+import { BrandMark } from "../layout/BrandMark";
+import { Checkbox } from "@fluentui/react-components";
 
 interface PrivacyGateProps {
   onAccept: () => Promise<void>;
@@ -26,9 +28,10 @@ export function PrivacyGate({ onAccept }: PrivacyGateProps) {
   return (
     <div className="gate-screen">
       <div className="gate-card">
-        <h1>Welcome to CSU Console</h1>
+        <BrandMark />
+        <h1>Welcome to MCAPS Console</h1>
         <p>
-          CSU Console is a local, read-only companion for your MSX portfolio. Before you
+          MCAPS Console is a local, read-only companion for your MSX portfolio. Before you
           sign in, please review how your data is handled.
         </p>
         <ul className="privacy-points">
@@ -43,14 +46,11 @@ export function PrivacyGate({ onAccept }: PrivacyGateProps) {
             from Settings.
           </li>
         </ul>
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
+        <Checkbox
             checked={checked}
-            onChange={(event) => setChecked(event.target.checked)}
+            onChange={(_event, data) => setChecked(data.checked === true)}
+            label="I understand and agree to these terms."
           />
-          I understand and agree to these terms.
-        </label>
         {error ? <ErrorBanner message={error} /> : null}
         <Button
           variant="primary"

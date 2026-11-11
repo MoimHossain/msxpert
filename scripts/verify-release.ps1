@@ -10,9 +10,9 @@ if (-not $publisher -or -not $publisher.StartsWith("CN=")) {
     throw "Set ARTIFACT_SIGNING_PUBLISHER to the full approved certificate subject."
 }
 
-$installerName = "CSU-Console-Setup-$($package.version).exe"
+$installerName = "MCAPS-Console-Setup-$($package.version).exe"
 $installer = Join-Path $release $installerName
-$mainExe = Join-Path $release "win-unpacked\CSU Console.exe"
+$mainExe = Join-Path $release "win-unpacked\MCAPS Console.exe"
 foreach ($file in @($installer, $mainExe)) {
     $signature = Get-AuthenticodeSignature -LiteralPath $file
     if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -cne $publisher) {
@@ -37,12 +37,14 @@ const yaml = require("js-yaml");
 const { execFileSync } = require("node:child_process");
 const pkg = require(path.join(process.cwd(), "package.json"));
 const release = path.join(process.cwd(), "release");
+const primary = `MCAPS-Console-Setup-${pkg.version}.exe`;
 const expected = `CSU-Console-Setup-${pkg.version}.exe`;
 const metadata = yaml.load(fs.readFileSync(path.join(release, "latest.yml"), "utf8"));
 const config = yaml.load(fs.readFileSync(path.join(release, "win-unpacked", "resources", "app-update.yml"), "utf8"));
 if (metadata.version !== pkg.version || metadata.files?.length !== 1) throw Error("Invalid update metadata");
 const file = metadata.files[0];
 const bytes = fs.readFileSync(path.join(release, expected));
+if (!bytes.equals(fs.readFileSync(path.join(release, primary)))) throw Error("Legacy update alias differs from the signed MCAPS installer");
 if (file.url !== expected || file.size !== bytes.length ||
     file.sha512 !== crypto.createHash("sha512").update(bytes).digest("base64")) {
   throw Error("Installer metadata/checksum mismatch");

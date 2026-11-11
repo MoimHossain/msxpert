@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
-import { classNames } from "../../lib/format";
+import type { ReactNode } from "react";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle } from "@fluentui/react-components";
+import { Dismiss24Regular } from "@fluentui/react-icons";
 
 interface ModalProps {
   title: string;
@@ -7,48 +8,25 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   width?: "sm" | "md" | "lg";
+  closeDisabled?: boolean;
 }
 
-export function Modal({ title, onClose, children, footer, width = "md" }: ModalProps) {
-  const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
+export function Modal({ title, onClose, children, footer, width = "md", closeDisabled = false }: ModalProps) {
   return (
-    <div className="modal-overlay" onMouseDown={onClose}>
-      <div
-        ref={dialogRef}
-        className={classNames("modal", `modal-${width}`)}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
+    <Dialog open onOpenChange={(_event, data) => { if (!data.open && !closeDisabled) onClose(); }}>
+      <DialogSurface
+        className="console-dialog"
+        style={{ maxWidth: width === "sm" ? 440 : width === "lg" ? 820 : 600 }}
+        mountNode={document.querySelector<HTMLElement>(".update-app-root")}
       >
-        <div className="modal-header">
-          <h2 id={titleId} className="modal-title">
+        <DialogBody>
+          <DialogTitle action={<Button appearance="subtle" icon={<Dismiss24Regular />} aria-label="Close dialog" disabled={closeDisabled} onClick={onClose} />}>
             {title}
-          </h2>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            {"\u2715"}
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        {footer ? <div className="modal-footer">{footer}</div> : null}
-      </div>
-    </div>
+          </DialogTitle>
+          <DialogContent className="console-dialog-content">{children}</DialogContent>
+          {footer ? <DialogActions>{footer}</DialogActions> : null}
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }

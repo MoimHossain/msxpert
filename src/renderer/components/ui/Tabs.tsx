@@ -1,4 +1,4 @@
-import { classNames } from "../../lib/format";
+import { Badge, Tab, TabList } from "@fluentui/react-components";
 
 export interface TabItem<T extends string> {
   id: T;
@@ -15,20 +15,19 @@ interface TabsProps<T extends string> {
 
 export function Tabs<T extends string>({ tabs, active, onChange, ariaLabel }: TabsProps<T>) {
   return (
-    <div className="tabs" role="tablist" aria-label={ariaLabel}>
+    <TabList className="tabs" selectedValue={active} aria-label={ariaLabel} onTabSelect={(_event, data) => {
+      const selected = tabs.find((tab) => tab.id === data.value);
+      if (selected) onChange(selected.id);
+    }}>
       {tabs.map((tab) => (
-        <button
+        <Tab
           key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={tab.id === active}
-          className={classNames("tab", tab.id === active && "tab-active")}
-          onClick={() => onChange(tab.id)}
+          value={tab.id}
         >
           {tab.label}
-          {tab.badge ? <span className="tab-count">{tab.badge}</span> : null}
-        </button>
+          {tab.badge ? <Badge appearance="tint" color="brand" size="small">{tab.badge}</Badge> : null}
+        </Tab>
       ))}
-    </div>
+    </TabList>
   );
 }

@@ -9,6 +9,7 @@ export const IPC = {
   updatePrepareRestart: "updates:prepare-restart",
   updateConfirmRestart: "updates:confirm-restart",
   bootstrap: "app:bootstrap",
+  resetSetup: "app:reset-setup",
   signIn: "auth:sign-in",
   signOut: "auth:sign-out",
   getSettings: "settings:get",

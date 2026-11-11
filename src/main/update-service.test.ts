@@ -79,6 +79,18 @@ describe("release eligibility and metadata", () => {
     expect(() => releaseDetails("0.3.0", tagged)).toThrow("ERR_UPDATE_VERSION");
   });
 
+  it("accepts MCAPS installers and legacy aliases, but not a mismatched renamed installer", () => {
+    const renamed = {
+      ...info, path: "MCAPS-Console-Setup-0.4.0.exe",
+      files: [{ ...info.files[0], url: "MCAPS-Console-Setup-0.4.0.exe" }],
+    };
+    expect(releaseDetails("0.3.0", renamed).version).toBe("0.4.0");
+    expect(releaseDetails("0.3.0", info).version).toBe("0.4.0");
+    expect(() => releaseDetails("0.3.0", {
+      ...renamed, files: [{ ...renamed.files[0], url: "MCAPS-Console-Setup-0.5.0.exe" }],
+    })).toThrow("ERR_UPDATE_METADATA");
+  });
+
   it("isolates explicitly enabled alpha updates from production releases", () => {
     expect(eligibleVersion("0.4.0-alpha.1", "0.4.0-alpha.2")).toBe(false);
     expect(eligibleVersion("0.4.0-alpha.1", "0.4.0-alpha.2", true)).toBe(true);

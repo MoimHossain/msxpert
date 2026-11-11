@@ -1,4 +1,5 @@
 import { Button } from "./Button";
+import { MessageBar, MessageBarActions, MessageBarBody } from "@fluentui/react-components";
 
 interface ErrorBannerProps {
   message: string;
@@ -7,13 +8,13 @@ interface ErrorBannerProps {
 
 export function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
   return (
-    <div className="error-banner" role="alert">
-      <p>{message}</p>
+    <MessageBar intent="error" className="error-banner">
+      <MessageBarBody>{message}</MessageBarBody>
       {onRetry ? (
-        <Button variant="secondary" onClick={onRetry}>
+        <MessageBarActions><Button variant="secondary" onClick={onRetry}>
           Try again
-        </Button>
+        </Button></MessageBarActions>
       ) : null}
-    </div>
+    </MessageBar>
   );
 }

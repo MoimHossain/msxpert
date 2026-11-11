@@ -58,7 +58,7 @@ function AppContent() {
   if (loading && !state) {
     return (
       <div className="gate-screen">
-        <Spinner label="Loading CSU Console..." />
+        <Spinner label="Loading MCAPS Console..." />
       </div>
     );
   }
@@ -112,6 +112,7 @@ function AppContent() {
   return (
     <AppShell
       identityName={state.auth.name ?? state.auth.username}
+      identityUsername={state.auth.username}
       changesBadge={state.overview.totals.pendingChanges}
     >
       <RouteOutlet />

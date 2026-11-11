@@ -157,7 +157,7 @@ export function ChangesTab({ since, reviewedThrough, hasRuns, onMarkReviewed }: 
             <section>
               <h3>Updated without watched-field changes ({unwatched.length})</h3>
               <p className="field-hint">
-                The Dataverse record version changed, but none of the fields CSU Console
+                The Dataverse record version changed, but none of the fields MCAPS Console
                 watches were affected.
               </p>
               {unwatched.map((milestone) => (

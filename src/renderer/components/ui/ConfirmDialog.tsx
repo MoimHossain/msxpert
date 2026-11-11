@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Modal } from "./Modal";
 import { Button } from "./Button";
+import { TextField } from "./TextField";
 
 interface ConfirmDialogProps {
   title: string;
@@ -41,6 +42,7 @@ export function ConfirmDialog({
     <Modal
       title={title}
       onClose={onCancel}
+      closeDisabled={busy}
       footer={
         <>
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
@@ -59,17 +61,12 @@ export function ConfirmDialog({
     >
       <div className="confirm-body">{description}</div>
       {requirePhrase ? (
-        <label className="field">
-          <span className="field-label">
-            Type <strong>{requirePhrase}</strong> to confirm
-          </span>
-          <input
-            className="input"
+        <TextField
+            label={`Type ${requirePhrase} to confirm`}
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
             autoComplete="off"
           />
-        </label>
       ) : null}
     </Modal>
   );

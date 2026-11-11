@@ -1,4 +1,4 @@
-# Signing and releasing CSU Console
+# Signing and releasing MCAPS Console
 
 Production installers must be signed with an approved organization identity. A self-signed development certificate does not provide a trustworthy SmartScreen or enterprise deployment experience.
 
@@ -34,9 +34,10 @@ The signed electron-builder configuration applies Artifact Signing while packagi
 
 Publish these files from `release`:
 
-- Signed `CSU-Console-Setup-<version>.exe`
+- Signed `MCAPS-Console-Setup-<version>.exe`
+- Byte-identical `CSU-Console-Setup-<version>.exe` compatibility alias for existing updater clients
 - Generated `latest.yml` (required for in-app updates)
-- `CSU-Console-Setup-0.1.0.exe.blockmap` when update tooling needs it
+- `MCAPS-Console-Setup-<version>.exe.blockmap` when update tooling needs it
 - `SHA256SUMS.txt`
 - Release notes and known issues
 - Third-party notices and SBOM
@@ -44,7 +45,7 @@ Publish these files from `release`:
 Verify the signature before publishing:
 
 ```powershell
-Get-AuthenticodeSignature .\release\CSU-Console-Setup-0.3.0.exe |
+Get-AuthenticodeSignature .\release\MCAPS-Console-Setup-0.5.0.exe |
   Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
 ```
 
@@ -83,6 +84,8 @@ The signed installed Windows x64 app exposes **Settings > Updates**, with the sa
 Only signed production packages carry approved publisher metadata. Development/unpacked/unsigned packages show that in-app installation is unavailable. Every installation attempt rechecks the full installer checksum, approved Authenticode publisher, and embedded product version, including cached downloads.
 
 Keep the application ID, per-user installation scope, and `%LOCALAPPDATA%\CSU Console` stable. This increment does not change the portfolio-data schema. Schema-incompatible future releases require separately tested backup/migration recovery before publication.
+
+The visible product and installed executable are now `MCAPS Console` / `MCAPS Console.exe`. The legacy data/profile directory and internal application/package/cache identities intentionally remain unchanged. Packaging runs `prepare:updates` to copy the primary installer to its legacy filename and update the manifest without changing installer bytes, SHA-512, or signature. Publish both names so pre-rename alpha clients can upgrade.
 
 If installation fails, download and run the current supported signed installer from Releases. **Do not delete `%LOCALAPPDATA%\CSU Console`**, `portfolio.db`, `vault-key.json`, or the protected MSAL cache. This is manual repair, not automatic rollback; do not install an older binary against an incompatible newer data schema.
 

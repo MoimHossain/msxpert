@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Tone } from "../../lib/status";
 import { classNames } from "../../lib/format";
+import { Badge as FluentBadge, type BadgeProps as FluentBadgeProps } from "@fluentui/react-components";
 
 interface BadgeProps {
   tone?: Tone;
@@ -16,14 +17,17 @@ const TONE_GLYPH: Record<Tone, string> = {
   info: "\u25C6",
   neutral: "\u25CB",
 };
+const COLORS: Record<Tone, NonNullable<FluentBadgeProps["color"]>> = {
+  positive: "success", warning: "warning", critical: "danger", info: "informative", neutral: "subtle",
+};
 
 export function Badge({ tone = "neutral", children, className }: BadgeProps) {
   return (
-    <span className={classNames("badge", `badge-${tone}`, className)}>
+    <FluentBadge appearance="tint" color={COLORS[tone]} className={classNames("badge", `badge-${tone}`, className)}>
       <span aria-hidden="true" className="badge-glyph">
         {TONE_GLYPH[tone]}
       </span>
       {children}
-    </span>
+    </FluentBadge>
   );
 }

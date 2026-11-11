@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { mkdirSync } from "node:fs";
 import { app, BrowserWindow, session, shell, type IpcMainInvokeEvent } from "electron";
 import { AuthService } from "./auth";
 import { registerIpc } from "./ipc";
@@ -8,8 +9,13 @@ import { VaultStore } from "./storage/vault";
 import { OperationGate } from "./operation-gate";
 import { createUpdateRuntime } from "./update-runtime";
 import type { UpdateService } from "./update-service";
+import { APP_NAME, LEGACY_APP_NAME } from "../shared/branding";
 
-app.setName("CSU Console");
+// Keep the Chromium profile as well as the encrypted vault across the rename.
+const userDataPath = join(app.getPath("appData"), LEGACY_APP_NAME);
+mkdirSync(userDataPath, { recursive: true });
+app.setPath("userData", userDataPath);
+app.setName(APP_NAME);
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) app.quit();
@@ -91,7 +97,7 @@ if (singleInstance) {
 
     const localAppData =
       process.env.LOCALAPPDATA ?? app.getPath("userData");
-    const dataPath = join(localAppData, "CSU Console");
+    const dataPath = join(localAppData, LEGACY_APP_NAME);
     store = new VaultStore(dataPath);
     const auth = new AuthService(dataPath);
     const msx = new MsxClient(auth);

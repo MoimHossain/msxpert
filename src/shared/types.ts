@@ -304,6 +304,7 @@ export interface DesktopApi {
   onUpdateRestart(listener: (request: import("./updates").RestartRequest) => void): () => void;
   confirmUpdateRestart(id: string, safe: boolean): Promise<void>;
   bootstrap(): Promise<BootstrapState>;
+  resetSetup(): Promise<BootstrapState>;
   signIn(): Promise<AuthState>;
   signOut(): Promise<AuthState>;
   getSettings(): Promise<AppSettings>;

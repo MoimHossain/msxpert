@@ -122,7 +122,7 @@ export function AccountOnboarding({
             <p>
               <strong>{preview.selected.name}</strong> is a child of{" "}
               <strong>{preview.topParent.name}</strong>. Tracking the child separately
-              would duplicate milestones already included under the top parent, so CSU
+              would duplicate milestones already included under the top parent, so MCAPS
               Console will track the top parent instead.
             </p>
           </div>
@@ -225,7 +225,7 @@ export function AccountOnboarding({
         hint={
           searchMode === "name"
             ? "Enter at least 3 characters. Selecting any child account resolves to its top parent."
-            : "Enter the numeric TPID. CSU Console finds the associated top-parent account."
+            : "Enter the numeric TPID. MCAPS Console finds the associated top-parent account."
         }
         value={term}
         onChange={(event) => setTerm(event.target.value)}

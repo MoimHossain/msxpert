@@ -1,24 +1,20 @@
-import { forwardRef, useId, type ReactNode, type SelectHTMLAttributes } from "react";
+import type { ChangeEventHandler, ReactNode } from "react";
+import { Field, Select, type SelectProps } from "@fluentui/react-components";
 import { classNames } from "../../lib/format";
 
-interface SelectFieldProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "id"> {
+interface SelectFieldProps extends Omit<SelectProps, "id" | "onChange" | "size"> {
   label: string;
   hideLabel?: boolean;
   children: ReactNode;
+  onChange?: ChangeEventHandler<HTMLSelectElement>;
 }
 
-export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
-  function SelectField({ label, hideLabel = false, className, children, ...rest }, ref) {
-    const id = useId();
-    return (
-      <div className={classNames("field", className)}>
-        <label htmlFor={id} className={hideLabel ? "sr-only" : "field-label"}>
-          {label}
-        </label>
-        <select ref={ref} id={id} className="select" {...rest}>
-          {children}
-        </select>
-      </div>
-    );
-  },
-);
+export function SelectField({ label, hideLabel = false, className, children, onChange, ...rest }: SelectFieldProps) {
+  return (
+    <Field className={classNames("field", className)} label={{ children: label, className: hideLabel ? "sr-only" : undefined }}>
+      <Select size="large" onChange={(event) => onChange?.(event)} {...rest}>
+        {children}
+      </Select>
+    </Field>
+  );
+}

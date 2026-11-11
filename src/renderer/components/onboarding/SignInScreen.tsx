@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../ui/Button";
 import { ErrorBanner } from "../ui/ErrorBanner";
+import { BrandMark } from "../layout/BrandMark";
 
 interface SignInScreenProps {
   onSignIn: () => Promise<void>;
@@ -25,9 +26,10 @@ export function SignInScreen({ onSignIn }: SignInScreenProps) {
   return (
     <div className="gate-screen">
       <div className="gate-card">
+        <BrandMark />
         <h1>Sign in to MSX</h1>
         <p>
-          CSU Console opens your default browser to complete sign-in with your
+          MCAPS Console opens your default browser to complete sign-in with your
           Microsoft-managed identity. You will return here automatically once
           authentication succeeds.
         </p>

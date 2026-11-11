@@ -111,7 +111,7 @@ export class AuthService {
       },
       successTemplate:
         "<html><body style=\"font-family:system-ui;padding:48px;background:#111827;color:#f9fafb\">" +
-        "<h1>Signed in to CSU Console</h1><p>You can close this window and return to the app.</p>" +
+        "<h1>Signed in to MCAPS Console</h1><p>You can close this window and return to the app.</p>" +
         "</body></html>",
       errorTemplate:
         "<html><body style=\"font-family:system-ui;padding:48px;background:#111827;color:#f9fafb\">" +

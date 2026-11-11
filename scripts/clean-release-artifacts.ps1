@@ -11,7 +11,7 @@ if (-not (Test-Path -LiteralPath $release)) {
 
 Get-ChildItem -LiteralPath $release -File |
     Where-Object {
-        $_.Name -match '^CSU-Console-Setup-\d+\.\d+\.\d+(-alpha\.\d+)?\.exe(\.blockmap)?$' -or
+        $_.Name -match '^(CSU|MCAPS)-Console-Setup-\d+\.\d+\.\d+(-alpha\.\d+)?\.exe(\.blockmap)?$' -or
         $_.Name -in @("SHA256SUMS.txt", "latest.yml", "alpha.yml", "SBOM.cdx.json", "THIRD-PARTY-NOTICES.md")
     } |
     Remove-Item -Force

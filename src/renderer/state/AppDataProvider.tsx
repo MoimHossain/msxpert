@@ -27,6 +27,7 @@ interface AppDataContextValue {
   saveSettings: (settings: AppSettings) => Promise<AppSettings>;
   signIn: () => Promise<AuthState>;
   signOut: () => Promise<AuthState>;
+  resetSetup: () => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -93,6 +94,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return auth;
   }, []);
 
+  const resetSetup = useCallback(async () => {
+    try {
+      setState(await window.desktop.resetSetup());
+    } catch (err) {
+      await reload();
+      throw err;
+    }
+  }, [reload]);
+
   const value = useMemo<AppDataContextValue>(
     () => ({
       loading,
@@ -105,6 +115,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       saveSettings,
       signIn,
       signOut,
+      resetSetup,
     }),
     [
       loading,
@@ -117,6 +128,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       saveSettings,
       signIn,
       signOut,
+      resetSetup,
     ],
   );
 

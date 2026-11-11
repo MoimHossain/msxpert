@@ -68,7 +68,8 @@ jobs:
           if-no-files-found: error
           path: |
             release/CSU-Console-Setup-*.exe
-            release/CSU-Console-Setup-*.exe.blockmap
+            release/MCAPS-Console-Setup-*.exe
+            release/MCAPS-Console-Setup-*.exe.blockmap
             release/latest.yml
             release/SHA256SUMS.txt
             release/SBOM.cdx.json
@@ -92,5 +93,5 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $files = (Get-ChildItem release -File).FullName
-          gh release create $env:GITHUB_REF_NAME @files --repo $env:GITHUB_REPOSITORY --verify-tag --draft --generate-notes --title "CSU Console $env:GITHUB_REF_NAME"
+          gh release create $env:GITHUB_REF_NAME @files --repo $env:GITHUB_REPOSITORY --verify-tag --draft --generate-notes --title "MCAPS Console $env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0) { throw "Draft release creation failed." }

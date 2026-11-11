@@ -19,6 +19,7 @@ if (!process.versions.electron) {
   }
 } else {
   const { app, BrowserWindow, ipcMain } = require("electron");
+  if (process.env.MCAPS_SMOKE_SCREENSHOT) app.disableHardwareAcceleration();
   app.setPath("userData", process.env.CSU_SMOKE_DATA);
   const root = join(__dirname, "..");
   const { defaultSettings } = require(join(root, "dist-main", "domain", "defaults.js"));
@@ -26,6 +27,8 @@ if (!process.versions.electron) {
   let window;
   let signedIn = false;
   let configured = false;
+  let privacyAccepted = true;
+  let resetCalls = 0;
   let phase = "idle";
   let confirmations = [];
   let openCount = 0;
@@ -62,11 +65,11 @@ if (!process.versions.electron) {
     assert.ok(clicked, `Enabled button: ${label}`);
   };
   app.whenReady().then(async () => {
-    ipcMain.handle(IPC.bootstrap, () => {
+    const bootstrap = () => {
       const settings = defaultSettings();
-      settings.privacyAccepted = true;
+      settings.privacyAccepted = privacyAccepted;
       return {
-        auth: { signedIn, name: null, username: null, userId: null },
+        auth: { signedIn, name: "Demo Manager", username: "demo@example.invalid", userId: null },
         settings,
         overview: {
           accounts: configured ? [{
@@ -80,6 +83,22 @@ if (!process.versions.electron) {
         },
         team: [], pods: [], dataPath: process.env.CSU_SMOKE_DATA, version: "0.3.0",
       };
+    };
+    ipcMain.handle(IPC.bootstrap, bootstrap);
+    ipcMain.handle(IPC.updateSettings, (_event, settings) => {
+      privacyAccepted = settings.privacyAccepted;
+      return settings;
+    });
+    ipcMain.handle(IPC.signIn, () => {
+      signedIn = true;
+      return bootstrap().auth;
+    });
+    ipcMain.handle(IPC.resetSetup, () => {
+      resetCalls++;
+      signedIn = false;
+      configured = false;
+      privacyAccepted = false;
+      return bootstrap();
     });
     ipcMain.handle(IPC.updateState, snapshot);
     ipcMain.handle(IPC.updateCheck, () => { publish("available"); return snapshot(); });
@@ -96,9 +115,11 @@ if (!process.versions.electron) {
     });
     window = new BrowserWindow({
       show: false,
+      width: 1280, height: 900,
       webPreferences: {
         preload: join(root, "dist-main", "preload", "index.js"),
         sandbox: true, contextIsolation: true, nodeIntegration: false,
+        offscreen: Boolean(process.env.MCAPS_SMOKE_SCREENSHOT), backgroundThrottling: false,
       },
     });
     await window.loadFile(join(root, "dist-renderer", "index.html"));
@@ -137,13 +158,57 @@ if (!process.versions.electron) {
     phase = "idle";
     await window.loadFile(join(root, "dist-renderer", "index.html"));
     await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    assert.equal(await js("Boolean(document.querySelector('.fui-FluentProvider'))"), true);
+    assert.equal(await js(`(() => {
+      const button = document.querySelector('.sidebar-settings');
+      const provider = document.querySelector('.fui-FluentProvider');
+      return parseFloat(getComputedStyle(button).borderRadius) >= 4 &&
+        getComputedStyle(provider).getPropertyValue('--colorBrandBackground').trim().length > 0;
+    })()`), true, "Fluent generated styles and theme tokens are permitted by the content policy");
+    assert.equal(await js("document.querySelector('.sidebar-brand').innerText.includes('MCAPS Console')"), true);
+    assert.equal(await js(`(() => {
+      const settings = document.querySelector('.sidebar-settings').getBoundingClientRect();
+      const profile = document.querySelector('.sidebar-profile').getBoundingClientRect();
+      return settings.top > innerHeight - 190 && profile.bottom <= innerHeight && profile.top > settings.top;
+    })()`), true, "Settings and profile stay anchored at the bottom of the rail");
+    const theme = await js("document.documentElement.dataset.theme");
+    await js("document.querySelector('.theme-toggle').click()");
+    await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      const image = await new Promise((resolve) => {
+        window.webContents.once("paint", (_event, _dirty, frame) => resolve(frame));
+        window.webContents.invalidate();
+      });
+      require("node:fs").writeFileSync(process.env.MCAPS_SMOKE_SCREENSHOT, image.toPNG());
+    }
     await click("Settings");
     await wait(() => js("Boolean(document.querySelector('.updates-panel'))"));
     assert.equal(await js("document.querySelector('.startup-updates') === null"), true);
     await click("Check for updates");
     await wait(() => js("document.body.innerText.includes('Version 0.4.0 is available')"));
     assert.equal(downloads, 1);
-    console.log("Update UI smoke passed: Settings, signed-out access/result notice, check, escaped notes, progress, cancellation, release action, and dirty-form restart guard.");
+    await click("Reset setup");
+    await wait(() => js("Boolean(document.querySelector('[role=dialog]'))"));
+    assert.equal(await js(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Reset and start again').disabled`), true);
+    await js(`(() => {
+      const input = document.querySelector('[role=dialog] input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'RESET');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await wait(() => js(`[...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Reset and start again' && !button.disabled)`));
+    await click("Reset and start again");
+    await wait(() => js("document.body.innerText.includes('Welcome to MCAPS Console')"));
+    assert.equal(resetCalls, 1);
+    assert.equal(await js("document.querySelector('.sidebar') === null"), true);
+    await js("document.querySelector('input[type=checkbox]').click()");
+    await click("Continue");
+    await wait(() => js("document.body.innerText.includes('Sign in to MSX')"));
+    await click("Sign in to MSX");
+    await wait(() => js("document.body.innerText.includes('Set your milestone window')"));
+    await click("Continue");
+    await wait(() => js("document.body.innerText.includes('Add your first customer')"));
+    console.log("MCAPS UI smoke passed: Fluent shell/theme, anchored profile/Settings, update checks/download/cancellation and dirty-form guard, confirmed Reset, and full privacy/sign-in/scope/customer first-run flow.");
     window.destroy();
     app.exit(0);
   }).catch((error) => {

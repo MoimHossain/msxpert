@@ -108,6 +108,19 @@ export class PortfolioService {
     return settings;
   }
 
+  async resetSetup(dataPath: string): Promise<BootstrapState> {
+    if (this.fetchInFlight) throw new Error("Finish the current refresh before resetting setup.");
+    await this.auth.signOut();
+    this.store.transaction(() => {
+      for (const account of this.listAccounts()) {
+        this.store.put(ARCHIVED_ACCOUNT_KIND, account.id, account);
+        this.store.delete(ACCOUNT_KIND, account.id);
+      }
+      this.store.put(SETTINGS_KIND, "default", defaultSettings());
+    });
+    return this.bootstrap(dataPath);
+  }
+
   listAccounts(): PortfolioAccount[] {
     return this.store
       .list<PortfolioAccount>(ACCOUNT_KIND)
@@ -141,19 +154,15 @@ export class PortfolioService {
       country: preview.topParent.country,
       createdAt: archived?.createdAt ?? new Date().toISOString(),
     };
-    this.store.transaction(() => {
-      this.store.put(ACCOUNT_KIND, account.id, account);
-      this.store.delete(ARCHIVED_ACCOUNT_KIND, account.id);
-      this.store.put(currentKind(account.id), "tree", preview.tree);
-    });
-
     try {
       await this.ingestAccount(account);
-    } catch (error) {
       this.store.transaction(() => {
-        this.store.delete(ACCOUNT_KIND, account.id);
-        this.deleteAccountData(account.id);
+        this.store.put(ACCOUNT_KIND, account.id, account);
+        this.store.delete(ARCHIVED_ACCOUNT_KIND, account.id);
       });
+    } catch (error) {
+      // Reconfiguring an archived customer must never erase its retained history.
+      if (!archived) this.store.transaction(() => this.deleteAccountData(account.id));
       throw error;
     }
     return account;

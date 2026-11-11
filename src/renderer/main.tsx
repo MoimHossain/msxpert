@@ -5,7 +5,7 @@ import "./styles.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
-  throw new Error("CSU Console could not find the #root element to mount into.");
+  throw new Error("MCAPS Console could not find the #root element to mount into.");
 }
 
 createRoot(rootElement).render(

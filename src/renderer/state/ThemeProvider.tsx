@@ -5,7 +5,9 @@ import {
   useMemo,
   useState,
   type ReactNode,
+  type CSSProperties,
 } from "react";
+import { FluentProvider, webDarkTheme, webLightTheme } from "@fluentui/react-components";
 
 type Theme = "light" | "dark";
 
@@ -39,7 +41,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [theme],
   );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  const fluent = theme === "dark" ? webDarkTheme : webLightTheme;
+  const palette: CSSProperties & Record<`--${string}`, string> = {
+    "--color-bg": fluent.colorNeutralBackground2,
+    "--color-bg-elevated": fluent.colorNeutralBackground1,
+    "--color-bg-subtle": fluent.colorNeutralBackground3,
+    "--color-border": fluent.colorNeutralStroke2,
+    "--color-border-strong": fluent.colorNeutralStroke1,
+    "--color-text": fluent.colorNeutralForeground1,
+    "--color-text-secondary": fluent.colorNeutralForeground2,
+    "--color-brand": fluent.colorBrandForeground1,
+    "--color-brand-hover": fluent.colorBrandForeground2Hover,
+    "--color-info": fluent.colorBrandForeground1,
+    "--color-info-bg": fluent.colorBrandBackground2,
+    "--shadow-sm": fluent.shadow4,
+    "--shadow-md": fluent.shadow16,
+  };
+  return (
+    <ThemeContext.Provider value={value}>
+      <FluentProvider theme={fluent} style={palette} className="fluent-app-theme">
+        {children}
+      </FluentProvider>
+    </ThemeContext.Provider>
+  );
 }
 
 export function useTheme(): ThemeContextValue {

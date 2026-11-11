@@ -87,6 +87,17 @@ export function registerIpc(
     handle(channel, (input) => handler(schema.parse(input)));
   }
   handle(IPC.bootstrap, () => service.bootstrap(dataPath));
+  ipcMain.handle(IPC.resetSetup, async (event) => {
+    if (!isTrusted(event)) throw new Error("Untrusted application request.");
+    if (!gate.tryLock("Setup is being reset. Wait for the first-run screen.")) {
+      throw new Error("Finish active work or updates before resetting setup.");
+    }
+    try {
+      return await service.resetSetup(dataPath);
+    } finally {
+      gate.unlock();
+    }
+  });
   handle(IPC.signIn, async () => {
     await auth.signIn();
     return auth.getState(await msx.getMyUserId());
