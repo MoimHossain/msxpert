@@ -95,16 +95,15 @@ export function AllChangesView() {
               <summary>
                 <span className="account-changes-title">{account.name}</span>
                 <Badge tone="info">{formatNumber(account.pendingChanges)} changes</Badge>
-                <button
-                  type="button"
-                  className="link-button"
+                <Button
+                  variant="secondary"
                   onClick={(event) => {
                     event.preventDefault();
                     goToAccount(account.id, "changes");
                   }}
                 >
                   Open account
-                </button>
+                </Button>
               </summary>
               {accountError ? (
                 <p className="field-error" role="alert">

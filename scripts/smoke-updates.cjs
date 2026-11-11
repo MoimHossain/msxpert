@@ -195,6 +195,43 @@ if (!process.versions.electron) {
       await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
     }
   };
+  const checkAllChangesSpacing = async () => {
+    await js("[...document.querySelectorAll('.sidebar button')].find(button => button.textContent.trim().startsWith('All Changes')).click()");
+    await wait(() => js("document.querySelectorAll('.account-changes-panel .changes-toolbar').length === 2"));
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(() => [...document.querySelectorAll('.account-changes-panel')].every(panel => {
+          const header = panel.querySelector('summary').getBoundingClientRect();
+          const action = panel.querySelector('.changes-toolbar button').getBoundingClientRect();
+          const hint = panel.querySelector('.changes-toolbar .field-hint').getBoundingClientRect();
+          const bounds = panel.getBoundingClientRect();
+          return action.top >= header.bottom + 15 && hint.top >= header.bottom + 15 &&
+            [...panel.querySelectorAll('summary > *, .changes-toolbar > *')].every(element => {
+              const rect = element.getBoundingClientRect();
+              return rect.left >= bounds.left + 15 && rect.right <= bounds.right - 15;
+            }) && panel.querySelector('summary button').classList.contains('fui-Button');
+        }))()`), true, `All Changes actions have breathing room, consistent Fluent styling, and fit their card at ${width}px`);
+      }
+    } finally {
+      window.setContentSize(...original);
+      await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
+    }
+    await js("document.querySelector('.app-content').scrollTop = 0");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-changes.png`));
+    }
+    await js("document.querySelector('.account-changes-panel > summary').click()");
+    assert.equal(await js("document.querySelector('.account-changes-panel').open"), false, "Account summary still collapses");
+    await js("document.querySelector('.account-changes-panel > summary').click()");
+    assert.equal(await js("document.querySelector('.account-changes-panel').open"), true, "Account summary still expands");
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+  };
   const clickMetric = async (label) => {
     assert.equal(await js(`(() => {
       const metric = [...document.querySelectorAll('button.stat-metric')]
@@ -323,6 +360,12 @@ if (!process.versions.electron) {
       });
     });
     ipcMain.handle(IPC.getAccountState, (_event, id) => ({
+      runs: [{ runId: "demo-run", at: "2026-11-11T08:00:00.000Z", durationMs: 1, ok: true, baseline: false }],
+      reviewedThrough: null,
+      since: {
+        added: [{ id: `change-${id}`, name: "Demo migration", accountName: "Test account", ownerName: "Demo Owner", date: "2027-01-15", status: "On Track" }],
+        modified: [], disappeared: [], churn: [], runCount: 1, fromRunId: null, toRunId: "demo-run",
+      },
       milestones: Array.from({ length: 60 }, (_, index) => ({
         id: `milestone-${id}-${index}`, name: "Demo migration", number: `DEMO-${index}`, date: "2027-01-15",
         status: "On Track", statusValue: 861980000, commitment: "Committed",
@@ -419,6 +462,7 @@ if (!process.versions.electron) {
       return settings.top > innerHeight - 190 && profile.bottom <= innerHeight && profile.top > settings.top;
     })()`), true, "Settings and profile stay anchored at the bottom of the rail");
     await checkPortfolioCards();
+    await checkAllChangesSpacing();
     await clickMetric("Accounts");
     await wait(() => js("document.querySelector('.metric-drilldown h2')?.textContent === 'Portfolio accounts'"));
     assert.equal(await js("document.querySelectorAll('.metric-drilldown tbody tr').length"), 3);
@@ -444,6 +488,7 @@ if (!process.versions.electron) {
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
     await checkPortfolioCards();
     await checkOwnerScrolling();
+    await checkAllChangesSpacing();
     await hoverThemeToggle();
     window.webContents.debugger.detach();
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {

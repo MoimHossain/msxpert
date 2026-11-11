@@ -1910,25 +1910,34 @@ button.stat-metric:hover,
 .account-changes-panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 12px 16px;
+  padding: 16px;
   background: var(--color-bg-elevated);
 }
 
-.account-changes-panel summary {
+.account-changes-panel > summary {
   cursor: pointer;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   font-weight: 600;
   list-style: none;
 }
 
-.account-changes-panel summary::-webkit-details-marker {
+.account-changes-panel[open] > summary {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.account-changes-panel > summary::-webkit-details-marker {
   display: none;
 }
 
 .account-changes-title {
-  flex: 1;
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .quiet-accounts {
