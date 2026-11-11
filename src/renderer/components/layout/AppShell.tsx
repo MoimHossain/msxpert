@@ -4,21 +4,24 @@ import { ToastViewport } from "../ui/ToastViewport";
 import { useUpdates } from "../../state/UpdateProvider";
 import { APP_NAME } from "../../../shared/branding";
 import { ShieldCheckmark20Regular } from "@fluentui/react-icons";
+import type { UserProfile } from "../../../shared/types";
 
 interface AppShellProps {
   identityName: string | null;
   identityUsername: string | null;
+  profile: UserProfile | null;
   changesBadge: number;
   children: ReactNode;
 }
 
-export function AppShell({ identityName, identityUsername, changesBadge, children }: AppShellProps) {
+export function AppShell({ identityName, identityUsername, profile, changesBadge, children }: AppShellProps) {
   const { state: updates } = useUpdates();
   return (
     <div className="app-shell">
       <Sidebar
         identityName={identityName}
         identityUsername={identityUsername}
+        profile={profile}
         entries={[
           { id: "portfolio", label: "Portfolio" },
           { id: "changes", label: "All Changes", badge: changesBadge },

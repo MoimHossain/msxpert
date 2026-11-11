@@ -51,6 +51,8 @@ describe("data-preserving setup reset", () => {
     msx = new MsxClient(auth);
     vi.spyOn(auth, "signOut").mockResolvedValue(signedOut);
     vi.spyOn(auth, "getState").mockResolvedValue(signedOut);
+    vi.spyOn(auth, "getCachedState").mockResolvedValue(signedOut);
+    vi.spyOn(auth, "getAccountKey").mockResolvedValue(null);
     service = new PortfolioService(store, auth, msx, "0.5.0-alpha.1");
     store.put("settings", "default", { ...defaultSettings(), privacyAccepted: true, retentionSnapshots: 7 });
     store.put("portfolio-account", account.id, account);
@@ -60,6 +62,8 @@ describe("data-preserving setup reset", () => {
     store.put(`watermark:${account.id}`, "current", { reviewedThrough: account.createdAt });
     store.put("team-person", person.id, person);
     store.put("pod", pod.id, pod);
+    store.put("user-profile", "current", { accountKey: "demo", displayName: "Demo profile" });
+    store.put("user-profile-photo", "current", "test-photo");
   });
 
   afterEach(() => {
@@ -72,6 +76,9 @@ describe("data-preserving setup reset", () => {
     const state = await service.resetSetup(directory);
     expect(auth.signOut).toHaveBeenCalledOnce();
     expect(state.auth.signedIn).toBe(false);
+    expect(state.profile).toBeNull();
+    expect(store.get("user-profile", "current")).toBeNull();
+    expect(store.get("user-profile-photo", "current")).toBeNull();
     expect(state.settings).toEqual(defaultSettings());
     expect(state.overview.accounts).toEqual([]);
     expect(store.get("archived-portfolio-account", account.id)).toEqual(account);

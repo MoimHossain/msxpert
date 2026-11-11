@@ -7,6 +7,18 @@ export interface AuthState {
   username: string | null;
   userId: string | null;
   message?: string | null;
+  checking?: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  displayName: string | null;
+  jobTitle: string | null;
+  email: string | null;
+  department: string | null;
+  officeLocation: string | null;
+  photoDataUrl: string | null;
+  updatedAt: string;
 }
 
 export interface ScopeSettings {
@@ -286,6 +298,7 @@ export interface PodSummary extends Pod {
 
 export interface BootstrapState {
   auth: AuthState;
+  profile: UserProfile | null;
   settings: AppSettings;
   overview: PortfolioOverview;
   team: TeamPerson[];
@@ -309,6 +322,8 @@ export interface DesktopApi {
   signIn(): Promise<AuthState>;
   cancelSignIn(): Promise<void>;
   onAuthRequired(listener: () => void): () => void;
+  restoreSession(): Promise<AuthState>;
+  refreshProfile(): Promise<UserProfile>;
   signOut(): Promise<AuthState>;
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;

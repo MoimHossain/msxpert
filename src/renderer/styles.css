@@ -582,6 +582,24 @@ a,
   flex-direction: column;
   gap: 4px;
   margin-bottom: 12px;
+  min-width: 0;
+}
+
+.field .fui-Input {
+  width: 100%;
+  min-width: 0;
+}
+
+.field .fui-Input input {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-profile {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .field-label {
@@ -1177,6 +1195,7 @@ textarea.input {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
+  align-items: start;
 }
 
 .scope-statuses {

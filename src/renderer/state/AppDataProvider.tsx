@@ -28,6 +28,8 @@ interface AppDataContextValue {
   signIn: () => Promise<AuthState>;
   signOut: () => Promise<AuthState>;
   resetSetup: () => Promise<void>;
+  profileError: string | null;
+  refreshProfile: () => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -40,6 +42,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<BootstrapState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const refreshProfile = useCallback(async () => {
+    setProfileError(null);
+    try {
+      const profile = await window.desktop.refreshProfile();
+      setState((current) => current?.auth.signedIn ? { ...current, profile } : current);
+    } catch (error) {
+      setProfileError(errorMessage(error));
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -57,6 +70,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (!state?.auth.checking) return;
+    let cancelled = false;
+    window.desktop.restoreSession().then((auth) => {
+      if (!cancelled) setState((current) => current ? { ...current, auth } : current);
+    }).catch(() => {
+      if (!cancelled) setState((current) => current ? { ...current, auth: { ...current.auth,
+        signedIn: false, checking: false, message: "Your session could not be restored. Sign in with MSX to retry." } } : current);
+    });
+    return () => { cancelled = true; };
+  }, [state?.auth.checking]);
+
+  useEffect(() => {
+    if (state?.auth.signedIn) void refreshProfile();
+  }, [state?.auth.signedIn, refreshProfile]);
 
   useEffect(() => window.desktop.onAuthRequired(() => {
     setState((current) => current ? { ...current, auth: { ...current.auth, signedIn: false,
@@ -95,13 +124,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const auth = await window.desktop.signOut();
-    setState((current) => (current ? { ...current, auth } : current));
+    setState((current) => (current ? { ...current, auth, profile: null } : current));
+    setProfileError(null);
     return auth;
   }, []);
 
   const resetSetup = useCallback(async () => {
     try {
       setState(await window.desktop.resetSetup());
+      setProfileError(null);
     } catch (err) {
       await reload();
       throw err;
@@ -121,6 +152,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       resetSetup,
+      profileError,
+      refreshProfile,
     }),
     [
       loading,
@@ -134,6 +167,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       resetSetup,
+      profileError,
+      refreshProfile,
     ],
   );
 

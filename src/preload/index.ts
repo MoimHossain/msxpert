@@ -25,6 +25,8 @@ const IPC = {
   signIn: "auth:sign-in",
   cancelSignIn: "auth:cancel-sign-in",
   authRequired: "auth:required",
+  restoreSession: "auth:restore",
+  refreshProfile: "profile:refresh",
   signOut: "auth:sign-out",
   getSettings: "settings:get",
   updateSettings: "settings:update",
@@ -69,6 +71,8 @@ const api: DesktopApi = {
   resetSetup: () => ipcRenderer.invoke(IPC.resetSetup),
   signIn: () => ipcRenderer.invoke(IPC.signIn),
   cancelSignIn: () => ipcRenderer.invoke(IPC.cancelSignIn),
+  restoreSession: () => ipcRenderer.invoke(IPC.restoreSession),
+  refreshProfile: () => ipcRenderer.invoke(IPC.refreshProfile),
   onAuthRequired: (listener) => {
     const handler = () => listener();
     ipcRenderer.on(IPC.authRequired, handler);

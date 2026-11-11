@@ -108,7 +108,13 @@ export function registerIpc(
     await auth.signIn();
     return auth.getState(await msx.getMyUserId());
   });
-  handle(IPC.signOut, () => auth.signOut());
+  handle(IPC.signOut, async () => {
+    const state = await auth.signOut();
+    service.profiles.clear();
+    return state;
+  });
+  handle(IPC.restoreSession, () => auth.getState());
+  handle(IPC.refreshProfile, () => service.profiles.refresh());
   handle(IPC.cancelSignIn, () => auth.cancelSignIn());
   handle(IPC.getSettings, () => service.getSettings());
   register(IPC.updateSettings, settingsSchema, (settings) =>

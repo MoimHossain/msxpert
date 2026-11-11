@@ -70,6 +70,7 @@ if (!process.versions.electron) {
       settings.privacyAccepted = privacyAccepted;
       return {
         auth: { signedIn, name: "Demo Manager", username: "demo@example.invalid", userId: null },
+        profile: null,
         settings,
         overview: {
           accounts: configured ? [{
@@ -93,6 +94,10 @@ if (!process.versions.electron) {
       signedIn = true;
       return bootstrap().auth;
     });
+    ipcMain.handle(IPC.refreshProfile, () => ({
+      id: "demo", displayName: "Demo Manager", jobTitle: "Demo role", email: "demo@example.invalid",
+      department: null, officeLocation: null, photoDataUrl: null, updatedAt: new Date().toISOString(),
+    }));
     ipcMain.handle(IPC.resetSetup, () => {
       resetCalls++;
       signedIn = false;
@@ -145,6 +150,11 @@ if (!process.versions.electron) {
     phase = "idle";
     await window.loadFile(join(root, "dist-renderer", "index.html"));
     await wait(() => js("Boolean(document.querySelector('.scope-editor input'))"));
+    assert.equal(await js(`(() => {
+      const fields = [...document.querySelectorAll('.scope-editor-grid .fui-Input')].map(e => e.getBoundingClientRect());
+      return fields.length === 3 && Math.max(...fields.map(r => r.top)) - Math.min(...fields.map(r => r.top)) < 1 &&
+        fields.every((r, i) => i === 0 || r.left >= fields[i - 1].right);
+    })()`), true, "Scope label and date controls align without overlap");
     await js(`(() => {
       const input = document.querySelector('.scope-editor input');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Unsaved scope');

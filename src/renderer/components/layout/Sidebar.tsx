@@ -7,6 +7,7 @@ import {
   People24Regular, Settings24Regular, WeatherMoon24Regular, WeatherSunny24Regular,
 } from "@fluentui/react-icons";
 import { BrandMark } from "./BrandMark";
+import type { UserProfile } from "../../../shared/types";
 
 /** Sidebar links are only the routes with no required parameters; account detail is
  * reached from a portfolio account card instead of from the rail. */
@@ -22,6 +23,7 @@ interface SidebarProps {
   entries: NavEntry[];
   identityName: string | null;
   identityUsername: string | null;
+  profile: UserProfile | null;
 }
 
 const icons = {
@@ -32,7 +34,7 @@ const icons = {
   settings: <Settings24Regular />,
 };
 
-export function Sidebar({ entries, identityName, identityUsername }: SidebarProps) {
+export function Sidebar({ entries, identityName, identityUsername, profile }: SidebarProps) {
   const { route, navigate } = useNavigation();
   const { theme, toggleTheme } = useTheme();
   const activeName = route.name === "account" ? "portfolio" : route.name;
@@ -87,10 +89,11 @@ export function Sidebar({ entries, identityName, identityUsername }: SidebarProp
           </Tooltip>
         </div>
         <div className="sidebar-profile">
-          <Avatar name={identityName ?? identityUsername ?? "User"} color="colorful" size={36} />
+          <Avatar name={profile?.displayName ?? identityName ?? identityUsername ?? "User"} color="colorful" size={36}
+            {...(profile?.photoDataUrl ? { image: { src: profile.photoDataUrl } } : {})} />
           <div className="sidebar-profile-copy">
-            <strong title={identityName ?? identityUsername ?? undefined}>{identityName ?? identityUsername ?? "Signed in"}</strong>
-            <span title={identityUsername ?? undefined}>{identityUsername ?? "Connected to Microsoft Sales"}</span>
+            <strong>{profile?.displayName ?? identityName ?? identityUsername ?? "Signed in"}</strong>
+            <span title={profile?.jobTitle ?? identityUsername ?? undefined}>{profile?.jobTitle ?? identityUsername ?? "Connected to Microsoft Sales"}</span>
           </div>
           <span className="profile-connected" title="Signed in" aria-label="Signed in" />
         </div>

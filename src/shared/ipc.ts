@@ -13,6 +13,8 @@ export const IPC = {
   signIn: "auth:sign-in",
   cancelSignIn: "auth:cancel-sign-in",
   authRequired: "auth:required",
+  restoreSession: "auth:restore",
+  refreshProfile: "profile:refresh",
   signOut: "auth:sign-out",
   getSettings: "settings:get",
   updateSettings: "settings:update",

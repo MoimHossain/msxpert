@@ -10,10 +10,12 @@ import { UpdatesPanel } from "./UpdatesPanel";
 import { useUpdateBlocker } from "../../state/UpdateProvider";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ArrowReset24Regular } from "@fluentui/react-icons";
+import { Avatar } from "@fluentui/react-components";
+import { ErrorBanner } from "../ui/ErrorBanner";
 
 export function SettingsView() {
-  const { auth, settings, dataPath, version, overview } = useLoadedAppData();
-  const { saveSettings, signOut, resetSetup } = useAppData();
+  const { auth, profile, settings, dataPath, version, overview } = useLoadedAppData();
+  const { saveSettings, signOut, resetSetup, profileError, refreshProfile } = useAppData();
   const { navigate } = useNavigation();
   const { notify } = useToast();
 
@@ -58,6 +60,15 @@ export function SettingsView() {
         <h2>Identity</h2>
         {auth.signedIn ? (
           <>
+            <div className="settings-profile">
+              <Avatar name={profile?.displayName ?? auth.name ?? "User"} size={64} color="colorful"
+                {...(profile?.photoDataUrl ? { image: { src: profile.photoDataUrl } } : {})} />
+              <div><strong>{profile?.displayName ?? auth.name ?? auth.username}</strong>
+                <p>{profile?.jobTitle}</p><p>{profile?.email ?? auth.username}</p>
+                <p>{[profile?.department, profile?.officeLocation].filter(Boolean).join(" / ")}</p>
+              </div>
+            </div>
+            {profileError ? <ErrorBanner message={profileError} onRetry={() => void refreshProfile()} /> : null}
             <p>
               Signed in as <strong>{auth.name ?? auth.username ?? "Unknown user"}</strong>
               {auth.username ? ` (${auth.username})` : ""}
@@ -153,7 +164,7 @@ export function SettingsView() {
         <p>Start again with the same welcome, privacy, sign-in, and configuration screens you saw on first launch.</p>
         <p className="field-hint">
           Tracked customers will be archived, not deleted. Saved customer data, history, team, and POD records stay on this device.
-          Re-adding a customer reconnects its retained history. You will be signed out and setup preferences will return to defaults.
+          Re-adding a customer reconnects its retained history. Your profile, photo, tokens, and territory selection will be cleared.
         </p>
         <Button variant="secondary" onClick={() => setResetOpen(true)}>Reset setup</Button>
       </section>
@@ -163,7 +174,7 @@ export function SettingsView() {
           title="Reset setup?"
           confirmLabel="Reset and start again"
           requirePhrase="RESET"
-          description={<p>This signs you out, archives all tracked customers, and resets setup preferences and privacy consent. Your database, customer history, team, and POD records are kept. Any unsaved settings on this page will be discarded.</p>}
+          description={<p>This signs you out, clears your profile, photo, tokens, territory selection, and privacy consent, and archives tracked customers. Customer history, team, and POD records are kept. Unsaved settings will be discarded.</p>}
           onCancel={() => setResetOpen(false)}
           onConfirm={async () => {
             setResetting(true);

@@ -75,6 +75,13 @@ function AppContent() {
 
   if (!state) return null;
 
+  if (state.auth.checking) {
+    return <div className="gate-screen"><div className="gate-card">
+      <h1>{state.profile?.displayName ?? "Welcome back"}</h1>
+      <Spinner label="Restoring your MSX session..." />
+    </div></div>;
+  }
+
   if (!state.settings.privacyAccepted) {
     return (
       <PrivacyGate
@@ -114,6 +121,7 @@ function AppContent() {
     <AppShell
       identityName={state.auth.name ?? state.auth.username}
       identityUsername={state.auth.username}
+      profile={state.profile}
       changesBadge={state.overview.totals.pendingChanges}
     >
       <RouteOutlet />

@@ -115,6 +115,16 @@ export class AuthService {
     return accounts[0] ?? null;
   }
 
+  async getAccountKey(): Promise<string | null> {
+    return (await this.firstAccount())?.homeAccountId ?? null;
+  }
+
+  async getCachedState(): Promise<AuthState> {
+    const account = await this.firstAccount();
+    return { signedIn: false, checking: Boolean(account), name: account?.name ?? null,
+      username: account?.username ?? null, userId: null };
+  }
+
   async getState(userId: string | null = null): Promise<AuthState> {
     const account = await this.firstAccount();
     let message: string | null = null;

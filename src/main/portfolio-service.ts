@@ -22,6 +22,7 @@ import { diffSnapshots, foldChanges } from "../domain/diff";
 import type { AuthService } from "./auth";
 import type { MsxClient } from "./msx-client";
 import type { VaultStore } from "./storage/vault";
+import { ProfileService } from "./profile-service";
 
 interface CurrentManifest {
   runId: string;
@@ -87,13 +88,14 @@ function summarizeMilestones(milestones: NormalizedMilestone[]) {
 
 export class PortfolioService {
   private fetchInFlight: Promise<FetchResult> | null = null;
+  readonly profiles: ProfileService;
 
   constructor(
     private readonly store: VaultStore,
     private readonly auth: AuthService,
     private readonly msx: MsxClient,
     private readonly version: string,
-  ) {}
+  ) { this.profiles = new ProfileService(store, auth); }
 
   getSettings(): AppSettings {
     const stored = this.store.get<AppSettings>(SETTINGS_KIND, "default");
@@ -111,6 +113,7 @@ export class PortfolioService {
   async resetSetup(dataPath: string): Promise<BootstrapState> {
     if (this.fetchInFlight) throw new Error("Finish the current refresh before resetting setup.");
     await this.auth.signOut();
+    this.profiles.clear();
     this.store.transaction(() => {
       for (const account of this.listAccounts()) {
         this.store.put(ARCHIVED_ACCOUNT_KIND, account.id, account);
@@ -570,7 +573,8 @@ export class PortfolioService {
 
   async bootstrap(dataPath: string): Promise<BootstrapState> {
     return {
-      auth: await this.auth.getState(),
+      auth: await this.auth.getCachedState(),
+      profile: this.profiles.getCached(await this.auth.getAccountKey()),
       settings: this.getSettings(),
       overview: this.getOverview(),
       team: this.listTeam(),
