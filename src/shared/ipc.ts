@@ -11,6 +11,8 @@ export const IPC = {
   bootstrap: "app:bootstrap",
   resetSetup: "app:reset-setup",
   signIn: "auth:sign-in",
+  cancelSignIn: "auth:cancel-sign-in",
+  authRequired: "auth:required",
   signOut: "auth:sign-out",
   getSettings: "settings:get",
   updateSettings: "settings:update",

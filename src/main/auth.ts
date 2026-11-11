@@ -1,7 +1,9 @@
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   LogLevel,
+  InteractionRequiredAuthError,
   PublicClientApplication,
   type AccountInfo,
   type AuthenticationResult,
@@ -11,10 +13,12 @@ import {
 } from "@azure/msal-node";
 import { safeStorage, shell } from "electron";
 import type { AuthState } from "../shared/types";
+import { loadConnectionConfig, type ConnectionConfig } from "./connection-config";
+import { AuthLoopback } from "./auth-loopback";
 
-const CLIENT_ID = "2ad88395-b77d-4561-9441-d0e40824f9bc";
-const AUTHORITY = "https://login.microsoftonline.com/organizations";
-const SCOPES = ["https://microsoftsales.crm.dynamics.com/.default"];
+export class AuthRequiredError extends Error {
+  constructor() { super("Your MSX session needs attention. Sign in with MSX to continue."); }
+}
 
 function atomicWrite(path: string, data: Buffer): void {
   const temporary = `${path}.tmp`;
@@ -44,7 +48,8 @@ class ProtectedCachePlugin implements ICachePlugin {
     try {
       const serialized = safeStorage.decryptString(protectedCache);
       context.tokenCache.deserialize(serialized);
-    } catch (error) {
+    } catch {
+      console.error("AUTH_CACHE_UNREADABLE");
       rmSync(this.path, { force: true });
       context.tokenCache.deserialize("{}");
     }
@@ -66,13 +71,17 @@ class ProtectedCachePlugin implements ICachePlugin {
 export class AuthService {
   private readonly client: PublicClientApplication;
   private readonly cache: ProtectedCachePlugin;
+  private activeSignIn: AbortController | null = null;
+  private readonly scopes: string[];
+  private readonly graphScopes = ["https://graph.microsoft.com/User.Read"];
 
-  constructor(dataDirectory: string) {
+  constructor(dataDirectory: string, connection: ConnectionConfig = loadConnectionConfig(dataDirectory)) {
     this.cache = new ProtectedCachePlugin(dataDirectory);
+    this.scopes = [`${connection.resourceUrl.replace(/\/$/, "")}/user_impersonation`];
     const configuration: Configuration = {
       auth: {
-        clientId: CLIENT_ID,
-        authority: AUTHORITY,
+        clientId: connection.clientId,
+        authority: `https://login.microsoftonline.com/${connection.tenant}`,
       },
       cache: {
         cachePlugin: this.cache,
@@ -83,9 +92,22 @@ export class AuthService {
           piiLoggingEnabled: false,
           loggerCallback: () => undefined,
         },
+        networkClient: {
+          sendGetRequestAsync: async <T>(url: string, options?: { headers?: Record<string, string> }) =>
+            this.authRequest<T>(url, { method: "GET", ...options }),
+          sendPostRequestAsync: async <T>(url: string, options?: { headers?: Record<string, string>; body?: string }) =>
+            this.authRequest<T>(url, { method: "POST", ...options }),
+        },
       },
     };
     this.client = new PublicClientApplication(configuration);
+  }
+
+  private async authRequest<T>(url: string, options: RequestInit) {
+    const signal = this.activeSignIn ? AbortSignal.any([this.activeSignIn.signal, AbortSignal.timeout(30000)]) :
+      AbortSignal.timeout(30000);
+    const response = await fetch(url, { ...options, signal });
+    return { status: response.status, headers: Object.fromEntries(response.headers), body: await response.json() as T };
   }
 
   private async firstAccount(): Promise<AccountInfo | null> {
@@ -95,18 +117,34 @@ export class AuthService {
 
   async getState(userId: string | null = null): Promise<AuthState> {
     const account = await this.firstAccount();
+    let message: string | null = null;
+    let signedIn = false;
+    if (account) {
+      try {
+        await this.getAccessToken();
+        signedIn = true;
+      } catch {
+        message = "Your saved MSX session could not be renewed. Sign in with MSX to retry.";
+      }
+    }
     return {
-      signedIn: Boolean(account),
+      signedIn,
       name: account?.name ?? null,
       username: account?.username ?? null,
       userId,
+      message,
     };
   }
 
-  private async interactive(): Promise<AuthenticationResult> {
+  private async interactive(controller: AbortController): Promise<AuthenticationResult> {
+    const state = randomUUID();
     const result = await this.client.acquireTokenInteractive({
-      scopes: SCOPES,
+      scopes: this.scopes,
+      extraScopesToConsent: this.graphScopes,
+      state,
+      loopbackClient: new AuthLoopback(state, controller.signal),
       openBrowser: async (url) => {
+        controller.signal.throwIfAborted();
         await shell.openExternal(url);
       },
       successTemplate:
@@ -121,21 +159,51 @@ export class AuthService {
     return result;
   }
 
-  async signIn(): Promise<string> {
-    return (await this.interactive()).accessToken;
+  async signIn(): Promise<void> {
+    if (this.activeSignIn) throw new Error("A sign-in is already in progress.");
+    const controller = new AbortController();
+    this.activeSignIn = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
+    try {
+      await this.interactive(controller);
+      controller.signal.throwIfAborted();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(timedOut ? "Sign-in timed out. Select Sign in with MSX to retry." : "Sign-in cancelled. You can try again.");
+      }
+      const code = error instanceof Error && "errorCode" in error ? String(error.errorCode) : "";
+      throw new Error(code === "access_denied" ? "Sign-in was declined. Select Sign in with MSX to retry." :
+        "Sign-in failed. Check your connection, tenant/client configuration, MSX access, and delegated Graph User.Read consent, then retry.");
+    } finally {
+      clearTimeout(timer);
+      this.activeSignIn = null;
+    }
   }
 
-  async getAccessToken(): Promise<string> {
+  cancelSignIn(): void { this.activeSignIn?.abort(); }
+
+  async getAccessToken(forceRefresh = false): Promise<string> {
+    return this.acquireSilent(this.scopes, forceRefresh);
+  }
+
+  async getGraphAccessToken(forceRefresh = false): Promise<string> {
+    return this.acquireSilent(this.graphScopes, forceRefresh);
+  }
+
+  private async acquireSilent(scopes: string[], forceRefresh: boolean): Promise<string> {
     const account = await this.firstAccount();
-    if (!account) throw new Error("Sign in to MSX before using this feature.");
+    if (!account) throw new AuthRequiredError();
     try {
       const result = await this.client.acquireTokenSilent({
-        scopes: SCOPES,
+        scopes,
         account,
+        forceRefresh,
       });
       return result.accessToken;
-    } catch {
-      return (await this.interactive()).accessToken;
+    } catch (error) {
+      if (error instanceof InteractionRequiredAuthError) throw new AuthRequiredError();
+      throw new Error("The sign-in session could not be renewed. Check your connection and sign in again.");
     }
   }
 

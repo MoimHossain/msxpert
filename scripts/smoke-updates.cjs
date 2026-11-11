@@ -204,7 +204,7 @@ if (!process.versions.electron) {
     await js("document.querySelector('input[type=checkbox]').click()");
     await click("Continue");
     await wait(() => js("document.body.innerText.includes('Sign in to MSX')"));
-    await click("Sign in to MSX");
+    await click("Sign in with MSX");
     await wait(() => js("document.body.innerText.includes('Set your milestone window')"));
     await click("Continue");
     await wait(() => js("document.body.innerText.includes('Add your first customer')"));

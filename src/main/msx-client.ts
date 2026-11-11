@@ -8,10 +8,13 @@ import type {
   SystemUserSearchResult,
 } from "../shared/types";
 import type { AuthService } from "./auth";
+import { AuthRequiredError } from "./auth";
+import { loadConnectionConfig } from "./connection-config";
 
-const CRM_ORIGIN = "https://microsoftsales.crm.dynamics.com";
+const connection = loadConnectionConfig();
+const CRM_ORIGIN = connection.resourceUrl.replace(/\/$/, "");
 const API_ROOT = `${CRM_ORIGIN}/api/data/v9.2/`;
-const APP_ID = "fe0c3504-3700-e911-a849-000d3a10b7cc";
+const APP_ID = connection.appId;
 const GUID_CHUNK = 25;
 const MAX_RETRIES = 4;
 
@@ -200,6 +203,7 @@ export class MsxClient {
       : new URL(pathOrUrl, API_ROOT);
     if (url.origin !== CRM_ORIGIN) throw new Error("MSX returned an unexpected API origin.");
 
+    let renewed = false;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       const response = await fetch(url, {
         headers: {
@@ -209,8 +213,16 @@ export class MsxClient {
           "OData-Version": "4.0",
           Prefer: 'odata.include-annotations="*"',
         },
+        signal: AbortSignal.timeout(30000),
       });
       if (response.ok) return (await response.json()) as T;
+      if (response.status === 401) {
+        if (renewed) throw new AuthRequiredError();
+        await this.auth.getAccessToken(true);
+        renewed = true;
+        attempt--;
+        continue;
+      }
 
       if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
         const retryAfter = Number(response.headers.get("retry-after"));

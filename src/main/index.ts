@@ -10,6 +10,7 @@ import { OperationGate } from "./operation-gate";
 import { createUpdateRuntime } from "./update-runtime";
 import type { UpdateService } from "./update-service";
 import { APP_NAME, LEGACY_APP_NAME } from "../shared/branding";
+import { loadConnectionConfig } from "./connection-config";
 
 // Keep the Chromium profile as well as the encrypted vault across the rename.
 const userDataPath = join(app.getPath("appData"), LEGACY_APP_NAME);
@@ -99,7 +100,7 @@ if (singleInstance) {
       process.env.LOCALAPPDATA ?? app.getPath("userData");
     const dataPath = join(localAppData, LEGACY_APP_NAME);
     store = new VaultStore(dataPath);
-    const auth = new AuthService(dataPath);
+    const auth = new AuthService(dataPath, loadConnectionConfig(dataPath));
     const msx = new MsxClient(auth);
     const portfolio = new PortfolioService(store, auth, msx, app.getVersion());
     const gate = new OperationGate();

@@ -5,9 +5,10 @@ import { BrandMark } from "../layout/BrandMark";
 
 interface SignInScreenProps {
   onSignIn: () => Promise<void>;
+  message?: string | null;
 }
 
-export function SignInScreen({ onSignIn }: SignInScreenProps) {
+export function SignInScreen({ onSignIn, message }: SignInScreenProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +34,14 @@ export function SignInScreen({ onSignIn }: SignInScreenProps) {
           Microsoft-managed identity. You will return here automatically once
           authentication succeeds.
         </p>
-        {error ? (
-          <ErrorBanner message={error} onRetry={() => void handleSignIn()} />
+        {error || message ? (
+          <ErrorBanner message={error ?? message ?? ""} onRetry={() => void handleSignIn()} />
         ) : null}
         <Button variant="primary" busy={busy} onClick={() => void handleSignIn()}>
-          Sign in to MSX
+          Sign in with MSX
         </Button>
+        {busy ? <Button onClick={() => void window.desktop.cancelSignIn().catch(() =>
+          setError("Sign-in could not be cancelled. Please retry."))}>Cancel sign-in</Button> : null}
       </div>
     </div>
   );

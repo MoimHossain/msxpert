@@ -6,6 +6,7 @@ export interface AuthState {
   name: string | null;
   username: string | null;
   userId: string | null;
+  message?: string | null;
 }
 
 export interface ScopeSettings {
@@ -306,6 +307,8 @@ export interface DesktopApi {
   bootstrap(): Promise<BootstrapState>;
   resetSetup(): Promise<BootstrapState>;
   signIn(): Promise<AuthState>;
+  cancelSignIn(): Promise<void>;
+  onAuthRequired(listener: () => void): () => void;
   signOut(): Promise<AuthState>;
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;

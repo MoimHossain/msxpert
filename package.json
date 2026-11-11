@@ -62,6 +62,7 @@
       "dist-main/**/*",
       "dist-renderer/**/*",
       "package.json",
+      "msx-connection.json",
       {
         "from": "prds",
         "to": ".",

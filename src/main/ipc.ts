@@ -1,6 +1,7 @@
 import { ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
 import type { AuthService } from "./auth";
+import { AuthRequiredError } from "./auth";
 import { MSX_ORIGIN, type MsxClient } from "./msx-client";
 import type { PortfolioService } from "./portfolio-service";
 import { IPC } from "../shared/ipc";
@@ -80,7 +81,12 @@ export function registerIpc(
   function handle(channel: string, handler: (input: unknown) => unknown): void {
     ipcMain.handle(channel, (event, input: unknown) => {
       if (!isTrusted(event)) throw new Error("Untrusted application request.");
-      return gate.run(() => handler(input));
+      return gate.run(async () => {
+        try { return await handler(input); } catch (error) {
+          if (error instanceof AuthRequiredError) event.sender.send(IPC.authRequired);
+          throw error;
+        }
+      });
     });
   }
   function register<T>(channel: string, schema: z.ZodType<T>, handler: (input: T) => unknown): void {
@@ -103,6 +109,7 @@ export function registerIpc(
     return auth.getState(await msx.getMyUserId());
   });
   handle(IPC.signOut, () => auth.signOut());
+  handle(IPC.cancelSignIn, () => auth.cancelSignIn());
   handle(IPC.getSettings, () => service.getSettings());
   register(IPC.updateSettings, settingsSchema, (settings) =>
     service.updateSettings(settings),

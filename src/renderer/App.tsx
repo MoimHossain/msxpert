@@ -88,6 +88,7 @@ function AppContent() {
   if (!state.auth.signedIn) {
     return (
       <SignInScreen
+        message={state.auth.message ?? null}
         onSignIn={async () => {
           await signIn();
         }}

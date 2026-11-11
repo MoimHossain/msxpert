@@ -58,6 +58,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     void reload();
   }, [reload]);
 
+  useEffect(() => window.desktop.onAuthRequired(() => {
+    setState((current) => current ? { ...current, auth: { ...current.auth, signedIn: false,
+      message: "Your MSX session expired. Sign in with MSX to continue." } } : current);
+  }), []);
+
   const refreshOverview = useCallback(async () => {
     const overview = await window.desktop.getOverview();
     setState((current) => (current ? { ...current, overview } : current));
