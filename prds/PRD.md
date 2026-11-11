@@ -843,6 +843,8 @@ Use GitHub Actions OIDC or an equivalent short-lived identity for Artifact Signi
 
 ### 16.6 Updates
 
+Proposed follow-on: [GitHub Release Distribution and In-App Updates](PRD-UPDATES.md) specifies private-release authentication, Settings-based updates, verified installation, and restart. That proposal is pending approval; the baseline policy below remains unchanged until then.
+
 Pilot:
 
 - App checks a configured private release feed for version metadata.

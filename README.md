@@ -1,4 +1,4 @@
-# CSU Console Desktop
+# msXpert
 
 Local-first Windows desktop application for tracking an authorized manager's MSX customer portfolio, milestone changes, team roster, and POD coverage.
 
