@@ -294,6 +294,15 @@ export interface BootstrapState {
 }
 
 export interface DesktopApi {
+  getUpdateState(): Promise<import("./updates").UpdateState>;
+  checkForUpdates(): Promise<import("./updates").UpdateState>;
+  downloadAndRestart(version: string): Promise<void>;
+  cancelUpdateDownload(): Promise<void>;
+  restartToUpdate(version: string): Promise<void>;
+  openReleases(): Promise<void>;
+  onUpdateState(listener: (state: import("./updates").UpdateState) => void): () => void;
+  onUpdateRestart(listener: (request: import("./updates").RestartRequest) => void): () => void;
+  confirmUpdateRestart(id: string, safe: boolean): Promise<void>;
   bootstrap(): Promise<BootstrapState>;
   signIn(): Promise<AuthState>;
   signOut(): Promise<AuthState>;

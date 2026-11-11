@@ -9,12 +9,18 @@ function required(name) {
 }
 
 const build = structuredClone(packageJson.build);
+const publisher = required("ARTIFACT_SIGNING_PUBLISHER");
+if (!publisher.startsWith("CN=")) {
+  throw new Error("ARTIFACT_SIGNING_PUBLISHER must be the full approved certificate subject (CN=...).");
+}
+build.forceCodeSigning = true;
+build.extraMetadata = { updatePublisher: publisher };
 delete build.win.signtoolOptions;
 build.win.azureSignOptions = {
   endpoint: required("ARTIFACT_SIGNING_ENDPOINT"),
   codeSigningAccountName: required("ARTIFACT_SIGNING_ACCOUNT"),
   certificateProfileName: required("ARTIFACT_SIGNING_PROFILE"),
-  publisherName: required("ARTIFACT_SIGNING_PUBLISHER"),
+  publisherName: publisher,
   fileDigest: "SHA256",
   timestampDigest: "SHA256",
   timestampRfc3161: "http://timestamp.acs.microsoft.com",

@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { RestartRequest, UpdateState } from "../shared/updates";
 import type {
   AppSettings,
   DesktopApi,
@@ -10,6 +11,15 @@ import type {
 // Sandboxed preloads cannot require relative modules at runtime, so these
 // channel constants stay self-contained in the compiled preload.
 const IPC = {
+  updateState: "updates:state",
+  updateCheck: "updates:check",
+  updateDownload: "updates:download",
+  updateCancel: "updates:cancel",
+  updateInstall: "updates:install",
+  updateOpenReleases: "updates:open-releases",
+  updateChanged: "updates:changed",
+  updatePrepareRestart: "updates:prepare-restart",
+  updateConfirmRestart: "updates:confirm-restart",
   bootstrap: "app:bootstrap",
   signIn: "auth:sign-in",
   signOut: "auth:sign-out",
@@ -35,6 +45,23 @@ const IPC = {
 } as const;
 
 const api: DesktopApi = {
+  getUpdateState: () => ipcRenderer.invoke(IPC.updateState),
+  checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck),
+  downloadAndRestart: (version) => ipcRenderer.invoke(IPC.updateDownload, version),
+  cancelUpdateDownload: () => ipcRenderer.invoke(IPC.updateCancel),
+  restartToUpdate: (version) => ipcRenderer.invoke(IPC.updateInstall, version),
+  openReleases: () => ipcRenderer.invoke(IPC.updateOpenReleases),
+  onUpdateState: (listener) => {
+    const handler = (_event: IpcRendererEvent, state: UpdateState) => listener(state);
+    ipcRenderer.on(IPC.updateChanged, handler);
+    return () => { ipcRenderer.removeListener(IPC.updateChanged, handler); };
+  },
+  onUpdateRestart: (listener) => {
+    const handler = (_event: IpcRendererEvent, request: RestartRequest) => listener(request);
+    ipcRenderer.on(IPC.updatePrepareRestart, handler);
+    return () => { ipcRenderer.removeListener(IPC.updatePrepareRestart, handler); };
+  },
+  confirmUpdateRestart: (id, safe) => ipcRenderer.invoke(IPC.updateConfirmRestart, { id, safe }),
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
   signIn: () => ipcRenderer.invoke(IPC.signIn),
   signOut: () => ipcRenderer.invoke(IPC.signOut),

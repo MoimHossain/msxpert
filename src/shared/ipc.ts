@@ -1,4 +1,13 @@
 export const IPC = {
+  updateState: "updates:state",
+  updateCheck: "updates:check",
+  updateDownload: "updates:download",
+  updateCancel: "updates:cancel",
+  updateInstall: "updates:install",
+  updateOpenReleases: "updates:open-releases",
+  updateChanged: "updates:changed",
+  updatePrepareRestart: "updates:prepare-restart",
+  updateConfirmRestart: "updates:confirm-restart",
   bootstrap: "app:bootstrap",
   signIn: "auth:sign-in",
   signOut: "auth:sign-out",

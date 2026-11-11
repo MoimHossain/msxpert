@@ -1,10 +1,13 @@
 import { join } from "node:path";
-import { app, BrowserWindow, session, shell } from "electron";
+import { app, BrowserWindow, session, shell, type IpcMainInvokeEvent } from "electron";
 import { AuthService } from "./auth";
 import { registerIpc } from "./ipc";
 import { MSX_ORIGIN, MsxClient } from "./msx-client";
 import { PortfolioService } from "./portfolio-service";
 import { VaultStore } from "./storage/vault";
+import { OperationGate } from "./operation-gate";
+import { createUpdateRuntime } from "./update-runtime";
+import type { UpdateService } from "./update-service";
 
 app.setName("CSU Console");
 
@@ -13,6 +16,12 @@ if (!singleInstance) app.quit();
 
 let mainWindow: BrowserWindow | null = null;
 let store: VaultStore | null = null;
+let updates: UpdateService | null = null;
+
+function isTrustedRequest(event: IpcMainInvokeEvent): boolean {
+  return Boolean(mainWindow && event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame);
+}
 
 function isAllowedExternal(url: string): boolean {
   try {
@@ -87,7 +96,9 @@ if (singleInstance) {
     const auth = new AuthService(dataPath);
     const msx = new MsxClient(auth);
     const portfolio = new PortfolioService(store, auth, msx, app.getVersion());
-    registerIpc(portfolio, auth, msx, dataPath);
+    const gate = new OperationGate();
+    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest);
+    updates = createUpdateRuntime(dataPath, gate, () => mainWindow, isTrustedRequest);
     await createWindow();
   }).catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
@@ -95,6 +106,7 @@ if (singleInstance) {
   });
 
   app.on("before-quit", () => {
+    updates?.dispose();
     store?.close();
     store = null;
   });

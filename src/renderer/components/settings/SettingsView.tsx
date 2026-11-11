@@ -6,6 +6,8 @@ import { PageHeader } from "../ui/PageHeader";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/TextField";
 import { ScopeEditor } from "../onboarding/ScopeEditor";
+import { UpdatesPanel } from "./UpdatesPanel";
+import { useUpdateBlocker } from "../../state/UpdateProvider";
 
 export function SettingsView() {
   const { auth, settings, dataPath, version, overview } = useLoadedAppData();
@@ -17,6 +19,7 @@ export function SettingsView() {
   const [savingScope, setSavingScope] = useState(false);
   const [retention, setRetention] = useState(settings.retentionSnapshots);
   const [savingRetention, setSavingRetention] = useState(false);
+  useUpdateBlocker(retention !== settings.retentionSnapshots);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -137,6 +140,8 @@ export function SettingsView() {
           </div>
         </dl>
       </section>
+
+      <UpdatesPanel />
 
       <section className="settings-section about-section">
         <h2>About CSU Console</h2>

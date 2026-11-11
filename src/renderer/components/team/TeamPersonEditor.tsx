@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { TextField } from "../ui/TextField";
 import { ErrorBanner } from "../ui/ErrorBanner";
 import { createLocalId } from "../../lib/id";
+import { useUpdateBlocker } from "../../state/UpdateProvider";
 
 interface TeamPersonEditorProps {
   person: TeamPerson | null;
@@ -29,7 +30,9 @@ function blankPerson(): TeamPerson {
 }
 
 export function TeamPersonEditor({ person, onSave, onCancel }: TeamPersonEditorProps) {
-  const [draft, setDraft] = useState<TeamPerson>(person ?? blankPerson());
+  const [initial] = useState<TeamPerson>(() => person ?? blankPerson());
+  const [draft, setDraft] = useState<TeamPerson>(initial);
+  useUpdateBlocker(JSON.stringify(draft) !== JSON.stringify(initial));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

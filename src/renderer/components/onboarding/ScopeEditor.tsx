@@ -3,6 +3,7 @@ import type { ScopeSettings } from "../../../shared/types";
 import { DEFAULT_EXCLUDED_STATUSES, microsoftFiscalYear } from "../../../domain/defaults";
 import { TextField } from "../ui/TextField";
 import { Button } from "../ui/Button";
+import { useUpdateBlocker } from "../../state/UpdateProvider";
 
 interface ScopeEditorProps {
   value: ScopeSettings;
@@ -35,11 +36,18 @@ export function ScopeEditor({
   const [dateFrom, setDateFrom] = useState(value.dateFrom);
   const [dateTo, setDateTo] = useState(value.dateTo);
   const [knownExcluded, setKnownExcluded] = useState<Set<string>>(
-    new Set(value.excludedStatusLabels),
+    new Set(value.excludedStatusLabels.filter((label) =>
+      DEFAULT_EXCLUDED_STATUSES.some((status) => status.label === label))),
   );
   const [custom, setCustom] = useState<CustomStatus[]>(() => toCustomStatuses(value));
   const [showCustom, setShowCustom] = useState(custom.length > 0);
   const [error, setError] = useState<string | null>(null);
+  useUpdateBlocker(
+    label !== value.label || dateFrom !== value.dateFrom || dateTo !== value.dateTo ||
+    JSON.stringify([...knownExcluded].sort()) !== JSON.stringify(value.excludedStatusLabels.filter((label) =>
+      DEFAULT_EXCLUDED_STATUSES.some((status) => status.label === label)).sort()) ||
+    JSON.stringify(custom) !== JSON.stringify(toCustomStatuses(value)),
+  );
 
   const toggleKnown = (statusLabel: string) => {
     setKnownExcluded((current) => {
@@ -99,7 +107,13 @@ export function ScopeEditor({
         ...validCustom.map((status) => status.label.trim()),
       ],
     };
-    await onSave(scope);
+    try {
+      await onSave(scope);
+      setLabel(scope.label);
+      setCustom(validCustom.map((status) => ({ ...status, label: status.label.trim() })));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (

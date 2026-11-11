@@ -14,6 +14,23 @@ import { AllChangesView } from "./components/changes/AllChangesView";
 import { TeamView } from "./components/team/TeamView";
 import { PodsView } from "./components/pods/PodsView";
 import { SettingsView } from "./components/settings/SettingsView";
+import { UpdatesPanel } from "./components/settings/UpdatesPanel";
+import { UpdateProvider } from "./state/UpdateProvider";
+import { ToastViewport } from "./components/ui/ToastViewport";
+
+function StartupUpdates() {
+  const { state } = useAppData();
+  if (state?.settings.privacyAccepted && state.auth.signedIn && state.overview.accounts.length > 0) return null;
+  return (
+    <>
+      <details className="startup-updates">
+        <summary>App updates</summary>
+        <UpdatesPanel />
+      </details>
+      <ToastViewport />
+    </>
+  );
+}
 
 function RouteOutlet() {
   const { route } = useNavigation();
@@ -106,11 +123,14 @@ export function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <AppDataProvider>
-          <NavigationProvider>
-            <AppContent />
-          </NavigationProvider>
-        </AppDataProvider>
+        <UpdateProvider>
+          <AppDataProvider>
+            <NavigationProvider>
+              <AppContent />
+              <StartupUpdates />
+            </NavigationProvider>
+          </AppDataProvider>
+        </UpdateProvider>
       </ToastProvider>
     </ThemeProvider>
   );

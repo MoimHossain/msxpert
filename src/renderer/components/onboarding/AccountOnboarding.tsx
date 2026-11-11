@@ -10,6 +10,7 @@ import { TextField } from "../ui/TextField";
 import { Spinner } from "../ui/Spinner";
 import { ErrorBanner } from "../ui/ErrorBanner";
 import { formatNumber } from "../../lib/format";
+import { useUpdateBlocker } from "../../state/UpdateProvider";
 
 interface AccountOnboardingProps {
   existingAccounts?: PortfolioAccount[];
@@ -28,6 +29,7 @@ export function AccountOnboarding({
   onCancel,
 }: AccountOnboardingProps) {
   const [step, setStep] = useState<Step>("search");
+  useUpdateBlocker(step === "preview");
   const [searchMode, setSearchMode] = useState<SearchMode>("name");
   const [term, setTerm] = useState("");
   const debouncedTerm = useDebouncedValue(term.trim(), 300);

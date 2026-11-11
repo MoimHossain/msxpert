@@ -1,9 +1,10 @@
-import { ipcMain, shell } from "electron";
+import { ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
 import type { AuthService } from "./auth";
 import { MSX_ORIGIN, type MsxClient } from "./msx-client";
 import type { PortfolioService } from "./portfolio-service";
 import { IPC } from "../shared/ipc";
+import type { OperationGate } from "./operation-gate";
 
 const idSchema = z.string().min(1).max(200);
 const nullableText = z.string().max(4000).nullable();
@@ -68,27 +69,30 @@ const podSchema = z.object({
   updatedAt: z.string(),
 });
 
-function register<T>(
-  channel: string,
-  schema: z.ZodType<T>,
-  handler: (input: T) => unknown | Promise<unknown>,
-): void {
-  ipcMain.handle(channel, async (_event, input: unknown) => handler(schema.parse(input)));
-}
-
 export function registerIpc(
   service: PortfolioService,
   auth: AuthService,
   msx: MsxClient,
   dataPath: string,
+  gate: OperationGate,
+  isTrusted: (event: IpcMainInvokeEvent) => boolean,
 ): void {
-  ipcMain.handle(IPC.bootstrap, () => service.bootstrap(dataPath));
-  ipcMain.handle(IPC.signIn, async () => {
+  function handle(channel: string, handler: (input: unknown) => unknown): void {
+    ipcMain.handle(channel, (event, input: unknown) => {
+      if (!isTrusted(event)) throw new Error("Untrusted application request.");
+      return gate.run(() => handler(input));
+    });
+  }
+  function register<T>(channel: string, schema: z.ZodType<T>, handler: (input: T) => unknown): void {
+    handle(channel, (input) => handler(schema.parse(input)));
+  }
+  handle(IPC.bootstrap, () => service.bootstrap(dataPath));
+  handle(IPC.signIn, async () => {
     await auth.signIn();
     return auth.getState(await msx.getMyUserId());
   });
-  ipcMain.handle(IPC.signOut, () => auth.signOut());
-  ipcMain.handle(IPC.getSettings, () => service.getSettings());
+  handle(IPC.signOut, () => auth.signOut());
+  handle(IPC.getSettings, () => service.getSettings());
   register(IPC.updateSettings, settingsSchema, (settings) =>
     service.updateSettings(settings),
   );
@@ -104,7 +108,7 @@ export function registerIpc(
     z.object({ accountId: idSchema, deleteHistory: z.boolean() }),
     ({ accountId, deleteHistory }) => service.removeAccount(accountId, deleteHistory),
   );
-  ipcMain.handle(IPC.getOverview, () => service.getOverview());
+  handle(IPC.getOverview, () => service.getOverview());
   register(IPC.getAccountState, idSchema, (accountId) =>
     service.getAccountState(accountId),
   );
@@ -124,10 +128,10 @@ export function registerIpc(
   register(IPC.removeTeamPerson, idSchema, (personId) =>
     service.removeTeamPerson(personId),
   );
-  ipcMain.handle(IPC.listTeam, () => service.listTeam());
+  handle(IPC.listTeam, () => service.listTeam());
   register(IPC.savePod, podSchema, (pod) => service.savePod(pod));
   register(IPC.removePod, idSchema, (podId) => service.removePod(podId));
-  ipcMain.handle(IPC.listPods, () => service.listPods());
+  handle(IPC.listPods, () => service.listPods());
   register(IPC.openExternal, z.url(), async (url) => {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:" || parsed.origin !== MSX_ORIGIN) {

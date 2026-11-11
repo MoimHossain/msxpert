@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { TextField } from "../ui/TextField";
 import { SelectField } from "../ui/SelectField";
 import { ErrorBanner } from "../ui/ErrorBanner";
+import { useUpdateBlocker } from "../../state/UpdateProvider";
 
 const ROLES: PodRole[] = ["CSAM", "Durable CSA", "CAIP CSA"];
 
@@ -29,7 +30,9 @@ function blankPod(): Pod {
 }
 
 export function PodEditor({ pod, accounts, team, onSave, onCancel }: PodEditorProps) {
-  const [draft, setDraft] = useState<Pod>(pod ?? blankPod());
+  const [initial] = useState<Pod>(() => pod ?? blankPod());
+  const [draft, setDraft] = useState<Pod>(initial);
+  useUpdateBlocker(JSON.stringify(draft) !== JSON.stringify(initial));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
