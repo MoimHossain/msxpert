@@ -1,0 +1,345 @@
+import { useMemo, useState } from "react";
+import type {
+  AccountOverview,
+  NormalizedMilestone,
+} from "../../../shared/types";
+import { useLoadedAppData, useAppData } from "../../state/AppDataProvider";
+import { useNavigation } from "../../state/NavigationProvider";
+import { useToast } from "../../state/ToastProvider";
+import { PageHeader } from "../ui/PageHeader";
+import { StatCard } from "../ui/StatCard";
+import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
+import { Spinner } from "../ui/Spinner";
+import { MilestoneTable } from "../account/MilestoneTable";
+import { AccountCard } from "./AccountCard";
+import { AddAccountModal } from "./AddAccountModal";
+import { RemoveAccountDialog } from "./RemoveAccountDialog";
+import {
+  formatCurrency,
+  formatNumber,
+  lastRunLabel,
+} from "../../lib/format";
+import {
+  failedAccountCount,
+  isFailed,
+  isStale,
+  staleAccountCount,
+} from "../../lib/portfolioMetrics";
+
+const ALL_SENTINEL = "__all__";
+
+type PortfolioDrilldown =
+  | "accounts"
+  | "milestones"
+  | "onTrack"
+  | "atRisk"
+  | "blocked"
+  | "committed"
+  | "uncommitted"
+  | "monthlyUse"
+  | "owners"
+  | "stale"
+  | "failed"
+  | "unreviewed";
+
+const MILESTONE_DRILLDOWNS = {
+  milestones: { title: "All portfolio milestones", filters: {} },
+  onTrack: { title: "On track milestones", filters: { status: "On Track" } },
+  atRisk: { title: "At risk milestones", filters: { status: "At Risk" } },
+  blocked: { title: "Blocked milestones", filters: { status: "Blocked" } },
+  committed: { title: "Committed milestones", filters: { commitment: "Committed" } },
+  uncommitted: {
+    title: "Uncommitted milestones",
+    filters: { commitment: "Uncommitted" },
+  },
+  monthlyUse: { title: "Monthly use by milestone", filters: {} },
+  owners: { title: "Milestones by owner", filters: {} },
+} as const;
+
+export function PortfolioView() {
+  const { overview } = useLoadedAppData();
+  const { refreshOverview } = useAppData();
+  const { goToAccount } = useNavigation();
+  const { notify } = useToast();
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [removingAccount, setRemovingAccount] = useState<AccountOverview | null>(null);
+  const [activeFetch, setActiveFetch] = useState<string | null>(null);
+  const [drilldown, setDrilldown] = useState<PortfolioDrilldown | null>(null);
+  const [portfolioMilestones, setPortfolioMilestones] =
+    useState<NormalizedMilestone[] | null>(null);
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [drilldownError, setDrilldownError] = useState<string | null>(null);
+
+  const totals = useMemo(() => {
+    const committed = overview.accounts.reduce((sum, account) => sum + account.committed, 0);
+    const uncommitted = overview.accounts.reduce(
+      (sum, account) => sum + account.uncommitted,
+      0,
+    );
+    const owners = overview.accounts.reduce((sum, account) => sum + account.owners, 0);
+    const onTrack = overview.accounts.reduce((sum, account) => sum + account.onTrack, 0);
+    return { committed, uncommitted, owners, onTrack };
+  }, [overview.accounts]);
+
+  const openDrilldown = async (next: PortfolioDrilldown) => {
+    if (drilldown === next) {
+      setDrilldown(null);
+      return;
+    }
+    setDrilldown(next);
+    setDrilldownError(null);
+    if (!(next in MILESTONE_DRILLDOWNS) || portfolioMilestones) return;
+
+    setDrilldownLoading(true);
+    try {
+      const states = await Promise.all(
+        overview.accounts.map((account) => window.desktop.getAccountState(account.id)),
+      );
+      setPortfolioMilestones(states.flatMap((state) => state.milestones));
+    } catch (error) {
+      setDrilldownError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDrilldownLoading(false);
+    }
+  };
+
+  const drilldownAccounts = useMemo(() => {
+    switch (drilldown) {
+      case "stale":
+        return overview.accounts.filter(isStale);
+      case "failed":
+        return overview.accounts.filter(isFailed);
+      case "unreviewed":
+        return overview.accounts.filter((account) => account.pendingChanges > 0);
+      default:
+        return overview.accounts;
+    }
+  }, [drilldown, overview.accounts]);
+
+  const accountDrilldownTitle =
+    drilldown === "stale"
+      ? "Stale accounts"
+      : drilldown === "failed"
+        ? "Failed refreshes"
+        : drilldown === "unreviewed"
+          ? "Accounts with unreviewed changes"
+          : "Portfolio accounts";
+
+  const runFetch = async (accountId?: string) => {
+    setActiveFetch(accountId ?? ALL_SENTINEL);
+    try {
+      const result = await window.desktop.fetchAccounts(accountId);
+      const failed = result.accounts.filter((entry) => !entry.ok);
+      if (failed.length > 0) {
+        notify(
+          `${result.accounts.length - failed.length} of ${result.accounts.length} accounts refreshed. Failed: ${failed
+            .map((entry) => entry.name)
+            .join(", ")}`,
+          "warning",
+        );
+      } else {
+        notify(`Refreshed ${result.accounts.length} account(s) successfully.`, "positive");
+      }
+      await refreshOverview();
+      setPortfolioMilestones(null);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), "critical");
+    } finally {
+      setActiveFetch(null);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Portfolio"
+        subtitle={`Scope: ${overview.scope.label} (${overview.scope.dateFrom} to ${overview.scope.dateTo})`}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setShowAddModal(true)}>
+              Add customer
+            </Button>
+            <Button
+              variant="primary"
+              busy={activeFetch === ALL_SENTINEL}
+              disabled={activeFetch !== null && activeFetch !== ALL_SENTINEL}
+              onClick={() => void runFetch()}
+            >
+              Fetch all
+            </Button>
+          </>
+        }
+      />
+
+      <div className="stat-grid">
+        <StatCard label="Accounts" value={formatNumber(overview.accounts.length)} tone="info" onClick={() => void openDrilldown("accounts")} active={drilldown === "accounts"} />
+        <StatCard label="Milestones" value={formatNumber(overview.totals.milestones)} onClick={() => void openDrilldown("milestones")} active={drilldown === "milestones"} />
+        <StatCard label="On track" value={formatNumber(totals.onTrack)} tone="positive" onClick={() => void openDrilldown("onTrack")} active={drilldown === "onTrack"} />
+        <StatCard label="At risk" value={formatNumber(overview.totals.atRisk)} tone="warning" onClick={() => void openDrilldown("atRisk")} active={drilldown === "atRisk"} />
+        <StatCard label="Blocked" value={formatNumber(overview.totals.blocked)} tone="critical" onClick={() => void openDrilldown("blocked")} active={drilldown === "blocked"} />
+        <StatCard label="Committed" value={formatNumber(totals.committed)} tone="info" onClick={() => void openDrilldown("committed")} active={drilldown === "committed"} />
+        <StatCard label="Uncommitted" value={formatNumber(totals.uncommitted)} tone="warning" onClick={() => void openDrilldown("uncommitted")} active={drilldown === "uncommitted"} />
+        <StatCard label="Monthly use" value={formatCurrency(overview.totals.monthlyUse)} onClick={() => void openDrilldown("monthlyUse")} active={drilldown === "monthlyUse"} />
+        <StatCard label="Owners" value={formatNumber(totals.owners)} tone="info" onClick={() => void openDrilldown("owners")} active={drilldown === "owners"} />
+        <StatCard
+          label="Stale accounts"
+          value={formatNumber(staleAccountCount(overview.accounts))}
+          tone={staleAccountCount(overview.accounts) > 0 ? "warning" : "neutral"}
+          hint="No successful fetch in 14+ days"
+          onClick={() => void openDrilldown("stale")}
+          active={drilldown === "stale"}
+        />
+        <StatCard
+          label="Failed refreshes"
+          value={formatNumber(failedAccountCount(overview.accounts))}
+          tone={failedAccountCount(overview.accounts) > 0 ? "critical" : "neutral"}
+          onClick={() => void openDrilldown("failed")}
+          active={drilldown === "failed"}
+        />
+        <StatCard
+          label="Unreviewed changes"
+          value={formatNumber(overview.totals.pendingChanges)}
+          tone={overview.totals.pendingChanges > 0 ? "info" : "neutral"}
+          onClick={() => void openDrilldown("unreviewed")}
+          active={drilldown === "unreviewed"}
+        />
+      </div>
+
+      {drilldown ? (
+        <section className="metric-drilldown" aria-live="polite">
+          <div className="metric-drilldown-header">
+            <div>
+              <h2>
+                {drilldown in MILESTONE_DRILLDOWNS
+                  ? MILESTONE_DRILLDOWNS[
+                      drilldown as keyof typeof MILESTONE_DRILLDOWNS
+                    ].title
+                  : accountDrilldownTitle}
+              </h2>
+              <p>Sortable, filterable source data for the selected dashboard metric.</p>
+            </div>
+            <button type="button" className="icon-button" onClick={() => setDrilldown(null)}>
+              Close
+            </button>
+          </div>
+          {drilldown in MILESTONE_DRILLDOWNS ? (
+            drilldownLoading ? (
+              <Spinner label="Loading portfolio milestones..." />
+            ) : drilldownError ? (
+              <p className="field-error" role="alert">{drilldownError}</p>
+            ) : portfolioMilestones ? (
+              <MilestoneTable
+                key={drilldown}
+                milestones={portfolioMilestones}
+                initialFilters={
+                  MILESTONE_DRILLDOWNS[
+                    drilldown as keyof typeof MILESTONE_DRILLDOWNS
+                  ].filters
+                }
+              />
+            ) : null
+          ) : drilldownAccounts.length === 0 ? (
+            <EmptyState
+              title={`No ${accountDrilldownTitle.toLowerCase()}`}
+              description="There are no portfolio accounts matching this metric."
+            />
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>TPID</th>
+                    <th>Milestones</th>
+                    <th>At risk</th>
+                    <th>Blocked</th>
+                    <th>Unreviewed</th>
+                    <th>Last refresh</th>
+                    <th><span className="sr-only">Open</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drilldownAccounts.map((account) => (
+                    <tr key={account.id}>
+                      <td>{account.name}</td>
+                      <td>{account.tpid}</td>
+                      <td>{formatNumber(account.milestones)}</td>
+                      <td>{formatNumber(account.atRisk)}</td>
+                      <td>{formatNumber(account.blocked)}</td>
+                      <td>{formatNumber(account.pendingChanges)}</td>
+                      <td>{lastRunLabel(account.lastRun)}</td>
+                      <td>
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            goToAccount(
+                              account.id,
+                              drilldown === "unreviewed" ? "changes" : "dashboard",
+                            )
+                          }
+                        >
+                          Open
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {overview.accounts.length === 0 ? (
+        <EmptyState
+          title="No customers tracked yet"
+          description="Add a customer to start fetching MSX milestones for your portfolio."
+          action={
+            <Button variant="primary" onClick={() => setShowAddModal(true)}>
+              Add your first customer
+            </Button>
+          }
+        />
+      ) : (
+        <div className="account-grid">
+          {overview.accounts.map((account) => (
+            <AccountCard
+              key={account.id}
+              account={account}
+              onOpen={() => goToAccount(account.id)}
+              onFetch={() => void runFetch(account.id)}
+              onRemove={() => setRemovingAccount(account)}
+              fetching={activeFetch === account.id || activeFetch === ALL_SENTINEL}
+            />
+          ))}
+        </div>
+      )}
+
+      {showAddModal ? (
+        <AddAccountModal
+          existingAccounts={overview.accounts}
+          onClose={() => setShowAddModal(false)}
+          onAdded={(account) => {
+            notify(`${account.name} added. Baseline captured.`, "positive");
+            void refreshOverview();
+          }}
+          onOpenExisting={(accountId) => goToAccount(accountId)}
+        />
+      ) : null}
+
+      {removingAccount ? (
+        <RemoveAccountDialog
+          account={removingAccount}
+          onCancel={() => setRemovingAccount(null)}
+          onRemoved={() => {
+            notify(`${removingAccount.name} removed from the portfolio.`, "positive");
+            setRemovingAccount(null);
+            void refreshOverview();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
