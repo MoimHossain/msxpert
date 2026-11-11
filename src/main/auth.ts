@@ -20,6 +20,9 @@ export class AuthRequiredError extends Error {
   constructor() { super("Your MSX session needs attention. Sign in with MSX to continue."); }
 }
 
+class CacheUnlockError extends Error {}
+const CACHE_RECOVERY_MESSAGE = "The protected sign-in cache could not be unlocked. Select Sign in with MSX to replace it.";
+
 function atomicWrite(path: string, data: Buffer): void {
   const temporary = `${path}.tmp`;
   writeFileSync(temporary, data);
@@ -28,6 +31,7 @@ function atomicWrite(path: string, data: Buffer): void {
 
 class ProtectedCachePlugin implements ICachePlugin {
   private readonly path: string;
+  needsRecovery = false;
 
   constructor(dataDirectory: string) {
     this.path = join(dataDirectory, "msal-cache.bin");
@@ -50,12 +54,13 @@ class ProtectedCachePlugin implements ICachePlugin {
       context.tokenCache.deserialize(serialized);
     } catch {
       console.error("AUTH_CACHE_UNREADABLE");
-      rmSync(this.path, { force: true });
-      context.tokenCache.deserialize("{}");
+      this.needsRecovery = true;
+      throw new CacheUnlockError(CACHE_RECOVERY_MESSAGE);
     }
   }
 
   async afterCacheAccess(context: TokenCacheContext): Promise<void> {
+    if (this.needsRecovery) throw new CacheUnlockError(CACHE_RECOVERY_MESSAGE);
     if (!context.cacheHasChanged) return;
     if (!safeStorage.isEncryptionAvailable()) {
       throw new Error("Windows data protection is unavailable.");
@@ -65,6 +70,7 @@ class ProtectedCachePlugin implements ICachePlugin {
 
   clear(): void {
     rmSync(this.path, { force: true });
+    this.needsRecovery = false;
   }
 }
 
@@ -111,8 +117,13 @@ export class AuthService {
   }
 
   private async firstAccount(): Promise<AccountInfo | null> {
-    const accounts = await this.client.getTokenCache().getAllAccounts();
-    return accounts[0] ?? null;
+    try {
+      const accounts = await this.client.getTokenCache().getAllAccounts();
+      return accounts[0] ?? null;
+    } catch (error) {
+      if (error instanceof CacheUnlockError) return null;
+      throw error;
+    }
   }
 
   async getAccountKey(): Promise<string | null> {
@@ -122,12 +133,13 @@ export class AuthService {
   async getCachedState(): Promise<AuthState> {
     const account = await this.firstAccount();
     return { signedIn: false, checking: Boolean(account), name: account?.name ?? null,
-      username: account?.username ?? null, userId: null };
+      username: account?.username ?? null, userId: null,
+      message: this.cache.needsRecovery ? CACHE_RECOVERY_MESSAGE : null };
   }
 
   async getState(userId: string | null = null): Promise<AuthState> {
     const account = await this.firstAccount();
-    let message: string | null = null;
+    let message: string | null = this.cache.needsRecovery ? CACHE_RECOVERY_MESSAGE : null;
     let signedIn = false;
     if (account) {
       try {
@@ -157,13 +169,6 @@ export class AuthService {
         controller.signal.throwIfAborted();
         await shell.openExternal(url);
       },
-      successTemplate:
-        "<html><body style=\"font-family:system-ui;padding:48px;background:#111827;color:#f9fafb\">" +
-        "<h1>Signed in to MCAPS Console</h1><p>You can close this window and return to the app.</p>" +
-        "</body></html>",
-      errorTemplate:
-        "<html><body style=\"font-family:system-ui;padding:48px;background:#111827;color:#f9fafb\">" +
-        "<h1>Sign-in failed</h1><p>{{error}}</p></body></html>",
     });
     if (!result) throw new Error("Authentication completed without a result.");
     return result;
@@ -171,15 +176,22 @@ export class AuthService {
 
   async signIn(): Promise<void> {
     if (this.activeSignIn) throw new Error("A sign-in is already in progress.");
+    if (this.cache.needsRecovery) this.cache.clear();
     const controller = new AbortController();
     this.activeSignIn = controller;
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
     try {
-      await this.interactive(controller);
+      const result = await this.interactive(controller);
       controller.signal.throwIfAborted();
+      if (!result.account) throw new Error("The sign-in did not return an account.");
+      const cache = this.client.getTokenCache();
+      for (const account of await cache.getAllAccounts()) {
+        if (account.homeAccountId !== result.account.homeAccountId) await cache.removeAccount(account);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
+        await this.signOut();
         throw new Error(timedOut ? "Sign-in timed out. Select Sign in with MSX to retry." : "Sign-in cancelled. You can try again.");
       }
       const code = error instanceof Error && "errorCode" in error ? String(error.errorCode) : "";
@@ -219,9 +231,13 @@ export class AuthService {
 
   async signOut(): Promise<AuthState> {
     const tokenCache = this.client.getTokenCache();
-    const accounts = await tokenCache.getAllAccounts();
-    for (const account of accounts) {
-      await tokenCache.removeAccount(account);
+    try {
+      const accounts = await tokenCache.getAllAccounts();
+      for (const account of accounts) {
+        await tokenCache.removeAccount(account);
+      }
+    } catch (error) {
+      if (!(error instanceof CacheUnlockError)) throw error;
     }
     this.cache.clear();
     return this.getState();

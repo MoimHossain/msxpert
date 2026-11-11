@@ -113,6 +113,7 @@ export function registerIpc(
   handle(IPC.signOut, async () => {
     const state = await auth.signOut();
     service.profiles.clear();
+    service.territoryImport.clear();
     return state;
   });
   handle(IPC.restoreSession, () => auth.getState());
@@ -120,6 +121,22 @@ export function registerIpc(
   handle(IPC.cancelSignIn, () => auth.cancelSignIn());
   handle(IPC.getSettings, () => service.getSettings());
   handle(IPC.listTerritories, () => msx.listTerritories());
+  register(IPC.previewTerritoryImport, z.array(z.guid()).min(1).max(1000), (ids) => service.territoryImport.preview(ids));
+  ipcMain.handle(IPC.importTerritories, async (event, input: unknown) => {
+    if (!isTrusted(event)) throw new Error("Untrusted application request.");
+    const id = z.uuid().parse(input);
+    if (!gate.tryLock("A territory import is running. Wait for it to finish.")) {
+      throw new Error("Finish active work or updates before importing territories.");
+    }
+    try {
+      return await service.territoryImport.import(id, (progress) => {
+        if (!event.sender.isDestroyed()) event.sender.send(IPC.territoryImportProgress, progress);
+      });
+    } catch (error) {
+      if (error instanceof AuthRequiredError) event.sender.send(IPC.authRequired);
+      throw error;
+    } finally { gate.unlock(); }
+  });
   register(IPC.updateSettings, settingsSchema, (settings) =>
     service.updateSettings(settings),
   );

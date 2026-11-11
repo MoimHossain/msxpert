@@ -6,6 +6,7 @@ import type {
   Pod,
   SystemUserSearchResult,
   TeamPerson,
+  TerritoryImportProgress,
 } from "../shared/types";
 
 // Sandboxed preloads cannot require relative modules at runtime, so these
@@ -31,6 +32,9 @@ const IPC = {
   getSettings: "settings:get",
   updateSettings: "settings:update",
   listTerritories: "territories:list",
+  previewTerritoryImport: "territories:preview",
+  importTerritories: "territories:import",
+  territoryImportProgress: "territories:progress",
   searchAccounts: "accounts:search",
   previewAccount: "accounts:preview",
   addAccount: "accounts:add",
@@ -82,6 +86,13 @@ const api: DesktopApi = {
   signOut: () => ipcRenderer.invoke(IPC.signOut),
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
   listTerritories: () => ipcRenderer.invoke(IPC.listTerritories),
+  previewTerritoryImport: (ids) => ipcRenderer.invoke(IPC.previewTerritoryImport, ids),
+  importTerritories: (id) => ipcRenderer.invoke(IPC.importTerritories, id),
+  onTerritoryImportProgress: (listener) => {
+    const handler = (_event: IpcRendererEvent, progress: TerritoryImportProgress) => listener(progress);
+    ipcRenderer.on(IPC.territoryImportProgress, handler);
+    return () => { ipcRenderer.removeListener(IPC.territoryImportProgress, handler); };
+  },
   updateSettings: (settings: AppSettings) =>
     ipcRenderer.invoke(IPC.updateSettings, settings),
   searchAccounts: (term: string) =>

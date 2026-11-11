@@ -14,7 +14,8 @@ import { useUpdateBlocker } from "../../state/UpdateProvider";
 
 interface AccountOnboardingProps {
   existingAccounts?: PortfolioAccount[];
-  onAdded: (account: PortfolioAccount) => void;
+  onAdded: (account: PortfolioAccount) => void | Promise<void>;
+  onBusyChange?: (busy: boolean) => void;
   onOpenExisting?: (accountId: string) => void;
   onCancel?: () => void;
 }
@@ -27,6 +28,7 @@ export function AccountOnboarding({
   onAdded,
   onOpenExisting,
   onCancel,
+  onBusyChange,
 }: AccountOnboardingProps) {
   const [step, setStep] = useState<Step>("search");
   useUpdateBlocker(step === "preview");
@@ -43,6 +45,9 @@ export function AccountOnboarding({
 
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  useUpdateBlocker(adding || previewLoading);
+  useEffect(() => { onBusyChange?.(adding || previewLoading); }, [adding, previewLoading, onBusyChange]);
+  useEffect(() => () => { onBusyChange?.(false); }, [onBusyChange]);
 
   useEffect(() => {
     const valid =
@@ -102,7 +107,7 @@ export function AccountOnboarding({
     setAddError(null);
     try {
       const account = await window.desktop.addAccount(preview.topParent.id);
-      onAdded(account);
+      await onAdded(account);
     } catch (error) {
       setAddError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -224,7 +229,7 @@ export function AccountOnboarding({
         label={searchMode === "name" ? "Customer name" : "Top-parent TPID"}
         hint={
           searchMode === "name"
-            ? "Enter at least 3 characters. Selecting any child account resolves to its top parent."
+            ? "Enter at least 3 characters. Results are deduplicated top parents, never child-account choices."
             : "Enter the numeric TPID. MCAPS Console finds the associated top-parent account."
         }
         value={term}

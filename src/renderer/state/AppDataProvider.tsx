@@ -118,7 +118,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async () => {
     const auth = await window.desktop.signIn();
-    setState((current) => (current ? { ...current, auth } : current));
+    setState((current) => (current ? { ...current, auth, profile: null } : current));
     return auth;
   }, []);
 

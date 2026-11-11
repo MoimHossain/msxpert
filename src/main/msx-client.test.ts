@@ -220,4 +220,68 @@ describe("MsxClient query construction", () => {
     await expect(new MsxClient({ getAccessToken: async () => "test-only" }).listTerritories())
       .rejects.toThrow("repeated pagination link");
   });
+
+  it("pages all territory accounts using the verified territory lookup", async () => {
+    const territory = "00000000-0000-0000-0000-000000000001";
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({
+      value: [{ accountid: "child", msp_mstopparentid: "100" }],
+      "@odata.nextLink": "https://microsoftsales.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=demo",
+    })).mockResolvedValueOnce(Response.json({ value: [{ accountid: "top", msp_mstopparentid: "100", msp_parentinglevelcode: 861980000 }] }));
+    vi.stubGlobal("fetch", fetch);
+    const accounts = await new MsxClient({ getAccessToken: async () => "test-only" }).accountsForTerritory(territory);
+    expect(accounts).toHaveLength(2);
+    expect(accounts[1]?.parentingLevel).toBe("Top");
+    expect(new URL(String(fetch.mock.calls[0]?.[0])).searchParams.get("$filter")).toBe(`_territoryid_value eq ${territory}`);
+  });
+
+  it("collapses same-name child results into one verified top parent per TPID", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({ value: [
+      { accountid: "child-a", name: "Demo", msp_mstopparentid: "100" },
+      { accountid: "child-b", name: "Demo", msp_mstopparentid: "100" },
+    ] })).mockResolvedValueOnce(Response.json({ value: [
+      { accountid: "child-a", name: "Demo", msp_mstopparentid: "100", msp_parentinglevelcode: 861980001 },
+      { accountid: "top", name: "Demo parent", msp_mstopparentid: "100", msp_parentinglevelcode: 861980000 },
+    ] }));
+    vi.stubGlobal("fetch", fetch);
+    const results = await new MsxClient({ getAccessToken: async () => "test-only" }).searchAccounts("Demo");
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ id: "top", tpid: "100", parentingLevel: "Top" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses ambiguous or missing top parents instead of falling back to the selected child", async () => {
+    const client = new MsxClient({ getAccessToken: async () => "test-only" });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ value: [
+      { accountid: "top-a", msp_mstopparentid: "100", msp_parentinglevelcode: 861980000 },
+      { accountid: "top-b", msp_mstopparentid: "100", msp_parentinglevelcode: 861980000 },
+    ] })));
+    await expect(client.resolveTopParent("100")).rejects.toThrow("exactly one");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({
+      accountid: "child", msp_mstopparentid: "100", msp_parentinglevelcode: 861980001,
+    })).mockResolvedValueOnce(Response.json({ value: [
+      { accountid: "child", msp_mstopparentid: "100", msp_parentinglevelcode: 861980001 },
+    ] })));
+    await expect(client.previewAccount("child", scope, new Set())).rejects.toThrow("exactly one");
+  });
+
+  it("renews an expired token once and then retries the request", async () => {
+    const getAccessToken = vi.fn(async (_force?: boolean) => "test-only");
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ value: [] }));
+    vi.stubGlobal("fetch", fetch);
+    await new MsxClient({ getAccessToken }).listTerritories();
+    expect(getAccessToken).toHaveBeenCalledWith(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("honors throttling retries without an unbounded wait", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(Response.json({ value: [] }));
+    vi.stubGlobal("fetch", fetch);
+    const client = new MsxClient({ getAccessToken: async () => "test-only" });
+    await client.listTerritories();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 429, headers: { "retry-after": "3600" } })));
+    await expect(client.listTerritories()).rejects.toThrow("Retry later");
+  });
 });

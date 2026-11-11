@@ -19,6 +19,7 @@ const API_ROOT = `${CRM_ORIGIN}/api/data/v9.2/`;
 const APP_ID = connection.appId;
 const GUID_CHUNK = 25;
 const MAX_RETRIES = 4;
+const TOP_PARENT_CODE = 861980000;
 
 type RawRecord = Record<string, unknown>;
 
@@ -34,6 +35,17 @@ function formatted(record: RawRecord, field: string): string | null {
 
 function stringOrNull(value: unknown): string | null {
   return value == null || value === "" ? null : String(value);
+}
+
+function parentingLevel(record: RawRecord): string | null {
+  return record.msp_parentinglevelcode === TOP_PARENT_CODE ? "Top" : formatted(record, "msp_parentinglevelcode");
+}
+
+function uniqueTopParent(tree: AccountTreeNode[]): AccountTreeNode {
+  const top = tree.filter((record) => record.parentingLevel?.toLowerCase() === "top");
+  const first = top[0];
+  if (top.length !== 1 || !first) throw new Error("MSX did not return exactly one accessible top parent for this TPID.");
+  return first;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -227,12 +239,12 @@ export class MsxClient {
       }
 
       if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
-        const retryAfter = Number(response.headers.get("retry-after"));
-        await delay(
-          Number.isFinite(retryAfter) && retryAfter > 0
-            ? retryAfter * 1000
-            : 500 * 2 ** attempt,
-        );
+        const header = response.headers.get("retry-after");
+        const seconds = Number(header);
+        const wait = header && !Number.isNaN(seconds) ? Math.max(0, seconds * 1000) :
+          header ? Math.max(0, Date.parse(header) - Date.now()) : 500 * 2 ** attempt;
+        if (!Number.isFinite(wait) || wait > 60000) throw new Error("MSX is busy. Retry later.");
+        await delay(wait);
         continue;
       }
       const requestId =
@@ -293,25 +305,34 @@ export class MsxClient {
     return result.UserId;
   }
 
+  async accountsForTerritory(territoryId: string): Promise<AccountSearchResult[]> {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(territoryId)) {
+      throw new Error("Invalid territory identifier.");
+    }
+    const records = await this.collection<RawRecord>(queryPath("accounts", {
+      "$select": "accountid,name,msp_mstopparentid,msp_parentinglevelcode,address1_country",
+      "$filter": `_territoryid_value eq ${territoryId}`,
+      "$orderby": "name asc",
+    }));
+    return records.map((record) => ({
+      id: String(record.accountid), name: String(record.name ?? "(unnamed account)"),
+      tpid: stringOrNull(record.msp_mstopparentid), parentingLevel: parentingLevel(record),
+      country: stringOrNull(record.address1_country),
+    }));
+  }
+
+  async resolveTopParent(tpid: string): Promise<AccountTreeNode> {
+    return uniqueTopParent(await this.resolveAccountTree(tpid));
+  }
+
   async searchAccounts(term: string): Promise<AccountSearchResult[]> {
     const input = term.trim();
     const escaped = escapeODataString(input);
     if (escaped.length < 3) return [];
     if (/^\d+$/.test(input)) {
       const tree = await this.resolveAccountTree(input);
-      const top = tree.find(
-        (record) => record.parentingLevel?.toLowerCase() === "top",
-      );
-      if (!top) return [];
-      return [
-        {
-          id: top.id,
-          name: top.name,
-          tpid: top.tpid,
-          parentingLevel: top.parentingLevel,
-          country: top.country,
-        },
-      ];
+      if (tree.length === 0) return [];
+      return [uniqueTopParent(tree)];
     }
     const query = queryPath("accounts", {
       "$select":
@@ -323,13 +344,11 @@ export class MsxClient {
       "$orderby": "name asc",
     });
     const records = await this.collection<RawRecord>(query);
-    return records.map((record) => ({
-      id: String(record.accountid),
-      name: String(record.name ?? "(unnamed account)"),
-      tpid: stringOrNull(record.msp_mstopparentid),
-      parentingLevel: formatted(record, "msp_parentinglevelcode"),
-      country: stringOrNull(record.address1_country),
-    }));
+    const results: AccountSearchResult[] = [];
+    for (const tpid of new Set(records.map((record) => stringOrNull(record.msp_mstopparentid)).filter((id) => id !== null))) {
+      results.push(await this.resolveTopParent(tpid));
+    }
+    return results.sort((left, right) => left.name.localeCompare(right.name));
   }
 
   private async accountById(id: string): Promise<AccountSearchResult> {
@@ -343,7 +362,7 @@ export class MsxClient {
       id: String(record.accountid),
       name: String(record.name ?? "(unnamed account)"),
       tpid: stringOrNull(record.msp_mstopparentid),
-      parentingLevel: formatted(record, "msp_parentinglevelcode"),
+      parentingLevel: parentingLevel(record),
       country: stringOrNull(record.address1_country),
     };
   }
@@ -364,7 +383,7 @@ export class MsxClient {
         id,
         name: String(record.name ?? "(unnamed account)"),
         tpid: String(record.msp_mstopparentid ?? tpid),
-        parentingLevel: formatted(record, "msp_parentinglevelcode"),
+        parentingLevel: parentingLevel(record),
         country: stringOrNull(record.address1_country),
         url: accountUrl(id),
       };
@@ -384,12 +403,7 @@ export class MsxClient {
     }
     const tree = await this.resolveAccountTree(selected.tpid);
     if (!tree.length) throw new Error("MSX returned no account tree for the selected TPID.");
-    const top =
-      tree.find((record) => record.parentingLevel?.toLowerCase() === "top") ??
-      tree.find((record) => record.id.toLowerCase() === selected.id.toLowerCase());
-    if (!top) {
-      throw new Error("The top-parent account could not be identified safely.");
-    }
+    const top = uniqueTopParent(tree);
     const milestones = await this.fetchMilestones(
       scope,
       tree.map((record) => record.id),

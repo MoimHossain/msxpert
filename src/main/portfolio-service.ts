@@ -23,6 +23,7 @@ import type { AuthService } from "./auth";
 import type { MsxClient } from "./msx-client";
 import type { VaultStore } from "./storage/vault";
 import { ProfileService } from "./profile-service";
+import { TerritoryImportService } from "./territory-import-service";
 
 interface CurrentManifest {
   runId: string;
@@ -89,13 +90,17 @@ function summarizeMilestones(milestones: NormalizedMilestone[]) {
 export class PortfolioService {
   private fetchInFlight: Promise<FetchResult> | null = null;
   readonly profiles: ProfileService;
+  readonly territoryImport: TerritoryImportService;
 
   constructor(
     private readonly store: VaultStore,
     private readonly auth: AuthService,
     private readonly msx: MsxClient,
     private readonly version: string,
-  ) { this.profiles = new ProfileService(store, auth); }
+  ) {
+    this.profiles = new ProfileService(store, auth);
+    this.territoryImport = new TerritoryImportService(msx, this, auth);
+  }
 
   getSettings(): AppSettings {
     const stored = this.store.get<AppSettings>(SETTINGS_KIND, "default");
@@ -115,6 +120,7 @@ export class PortfolioService {
     if (this.fetchInFlight) throw new Error("Finish the current refresh before resetting setup.");
     await this.auth.signOut();
     this.profiles.clear();
+    this.territoryImport.clear();
     this.store.transaction(() => {
       for (const account of this.listAccounts()) {
         this.store.put(ARCHIVED_ACCOUNT_KIND, account.id, account);

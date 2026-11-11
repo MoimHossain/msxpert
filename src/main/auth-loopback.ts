@@ -20,6 +20,11 @@ export class AuthLoopback implements ILoopbackClient {
       }
       this.server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", "http://localhost");
+        if (request.method === "GET" && url.pathname === "/complete") {
+          response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" })
+            .end("Return to MCAPS Console to see the sign-in result. You can close this window.");
+          return;
+        }
         if (request.method !== "GET" || url.pathname !== "/" ||
             url.searchParams.get("state") !== this.state) {
           response.writeHead(400).end("Invalid sign-in callback.");
@@ -31,12 +36,11 @@ export class AuthLoopback implements ILoopbackClient {
           response.writeHead(400).end("Missing sign-in response.");
           return;
         }
-        response.writeHead(200, {
-          "Content-Type": "text/plain; charset=utf-8",
+        response.writeHead(303, {
+          Location: "/complete",
           "Cache-Control": "no-store",
           "Referrer-Policy": "no-referrer",
-        }).end(error ? "Sign-in was not completed. Return to MCAPS Console to retry." :
-          "Signed in to MCAPS Console. Close this window and return to the app.");
+        }).end();
         resolve(code ? { code, state: this.state } : { error: error ?? "access_denied", state: this.state });
       });
       this.server.once("error", () => reject(new Error("The local sign-in callback could not start.")));

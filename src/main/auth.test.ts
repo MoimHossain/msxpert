@@ -1,15 +1,17 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthRequiredError, AuthService } from "./auth";
 import { AuthLoopback } from "./auth-loopback";
+import type { Configuration, TokenCacheContext } from "@azure/msal-node";
 
 const mocks = vi.hoisted(() => ({
   accounts: vi.fn(),
   silent: vi.fn(),
   interactive: vi.fn(),
   remove: vi.fn(),
+  config: null as Configuration | null,
 }));
 vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value) },
@@ -19,6 +21,7 @@ vi.mock("@azure/msal-node", () => ({
   LogLevel: { Warning: 2 },
   InteractionRequiredAuthError: class extends Error {},
   PublicClientApplication: class {
+    constructor(config: Configuration) { mocks.config = config; }
     getTokenCache() { return { getAllAccounts: mocks.accounts, removeAccount: mocks.remove }; }
     acquireTokenSilent = mocks.silent;
     acquireTokenInteractive = mocks.interactive;
@@ -58,23 +61,55 @@ describe("MSX session lifecycle", () => {
   });
 
   it("cancels the pending flow and permits retry", async () => {
+    mocks.accounts.mockResolvedValue([]);
     mocks.interactive.mockImplementation(({ loopbackClient }) => loopbackClient.listenForAuthCode());
     const service = auth();
     const signingIn = service.signIn();
     const rejection = expect(signingIn).rejects.toThrow("cancelled");
     service.cancelSignIn();
     await rejection;
-    mocks.interactive.mockResolvedValue({ accessToken: "test-only" });
+    mocks.interactive.mockResolvedValue({ accessToken: "test-only", account: { homeAccountId: "demo-account" } });
     await expect(service.signIn()).resolves.toBeUndefined();
   });
 
   it("bounds an abandoned browser sign-in with a retryable timeout", async () => {
+    mocks.accounts.mockResolvedValue([]);
     vi.useFakeTimers();
     mocks.interactive.mockImplementation(({ loopbackClient }) => loopbackClient.listenForAuthCode());
     const signingIn = auth().signIn();
     const rejection = expect(signingIn).rejects.toThrow("timed out");
     await vi.advanceTimersByTimeAsync(120000);
     await rejection;
+  });
+
+  it("uses the interactively selected identity instead of an older cached account", async () => {
+    const previous = { homeAccountId: "previous-account" };
+    const selected = { homeAccountId: "selected-account" };
+    mocks.accounts.mockResolvedValue([previous, selected]);
+    mocks.interactive.mockResolvedValue({ account: selected, accessToken: "test-only" });
+    await auth().signIn();
+    expect(mocks.remove).toHaveBeenCalledExactlyOnceWith(previous);
+  });
+
+  it("preserves an unreadable protected cache until explicit sign-in replaces it", async () => {
+    const service = auth();
+    const directory = directories.at(-1)!;
+    const file = join(directory, "msal-cache.bin");
+    const protectedBytes = Buffer.from("synthetic-unreadable-protected-cache");
+    writeFileSync(file, protectedBytes);
+    const context = { tokenCache: { deserialize: vi.fn() }, cacheHasChanged: false } as TokenCacheContext;
+    mocks.accounts.mockImplementation(async () => {
+      await mocks.config?.cache?.cachePlugin?.beforeCacheAccess(context);
+      return [];
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await service.getCachedState()).toMatchObject({ signedIn: false, checking: false,
+      message: expect.stringContaining("could not be unlocked") });
+    expect(readFileSync(file)).toEqual(protectedBytes);
+    mocks.interactive.mockResolvedValue({ account: { homeAccountId: "demo-account" }, accessToken: "test-only" });
+    await service.signIn();
+    expect(existsSync(file)).toBe(false);
+    log.mockRestore();
   });
 });
 

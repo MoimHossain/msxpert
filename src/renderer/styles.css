@@ -622,6 +622,16 @@ a,
   font-weight: 600;
 }
 
+.import-accounts {
+  max-height: 240px;
+  overflow: auto;
+  padding-left: 24px;
+}
+
+.territory-import progress {
+  width: 100%;
+}
+
 .field-label {
   font-size: 13px;
   font-weight: 600;

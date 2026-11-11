@@ -54,7 +54,8 @@ describe("data-preserving setup reset", () => {
     vi.spyOn(auth, "getCachedState").mockResolvedValue(signedOut);
     vi.spyOn(auth, "getAccountKey").mockResolvedValue(null);
     service = new PortfolioService(store, auth, msx, "0.5.0-alpha.1");
-    store.put("settings", "default", { ...defaultSettings(), privacyAccepted: true, retentionSnapshots: 7 });
+    store.put("settings", "default", { ...defaultSettings(), privacyAccepted: true, retentionSnapshots: 7,
+      territoryIds: ["00000000-0000-0000-0000-000000000001"], onboardingComplete: true });
     store.put("portfolio-account", account.id, account);
     store.put(`current:${account.id}`, "milestones", []);
     store.put(`snapshots:${account.id}`, account.createdAt, { retained: "snapshot" });

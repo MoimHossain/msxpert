@@ -33,6 +33,11 @@ if (!process.versions.electron) {
   let confirmations = [];
   let openCount = 0;
   let downloads = 0;
+  let imports = 0;
+  const demoTerritory = {
+    id: "00000000-0000-0000-0000-000000000001", name: "Demo territory",
+    accountTeamUnitGroup: "Demo group", salesUnit: "Demo unit", salesGroup: "Demo sales group", fiscalYear: null,
+  };
   const release = {
     version: "0.4.0", publishedAt: "2026-11-11T08:00:00.000Z",
     notes: "<img src=x onerror=alert('unsafe')> Release notes stay text.", size: 100000000,
@@ -49,6 +54,20 @@ if (!process.versions.electron) {
     window.webContents.send(IPC.updateChanged, snapshot());
   };
   const js = (source) => window.webContents.executeJavaScript(source);
+  const screenshot = async (path) => {
+    await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    const image = await new Promise((resolve) => {
+      const paint = (_event, _dirty, frame) => {
+        if (frame.isEmpty()) return;
+        window.webContents.removeListener("paint", paint);
+        clearInterval(invalidate);
+        resolve(frame);
+      };
+      window.webContents.on("paint", paint);
+      const invalidate = setInterval(() => window.webContents.invalidate(), 50);
+    });
+    require("node:fs").writeFileSync(path, image.toPNG());
+  };
   const wait = async (predicate) => {
     const deadline = Date.now() + 10000;
     while (!await predicate()) {
@@ -99,7 +118,25 @@ if (!process.versions.electron) {
       id: "demo", displayName: "Demo Manager", jobTitle: "Demo role", email: "demo@example.invalid",
       department: null, officeLocation: null, photoDataUrl: null, updatedAt: new Date().toISOString(),
     }));
-    ipcMain.handle(IPC.listTerritories, () => []);
+    ipcMain.handle(IPC.listTerritories, () => [demoTerritory]);
+    ipcMain.handle(IPC.previewTerritoryImport, (_event, ids) => {
+      assert.deepEqual(ids, [demoTerritory.id]);
+      return {
+        id: "00000000-0000-4000-8000-000000000003", territories: [demoTerritory],
+        accounts: [{ id: "smoke-account", name: "Test account", tpid: "000", alreadyPresent: false }],
+        alreadyPresent: 0, unresolved: [],
+      };
+    });
+    ipcMain.handle(IPC.importTerritories, async (_event, id) => {
+      assert.equal(id, "00000000-0000-4000-8000-000000000003");
+      imports++;
+      window.webContents.send(IPC.territoryImportProgress, { completed: 0, total: 1, added: 0, skipped: 0, failed: 0 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      configured = true;
+      window.webContents.send(IPC.territoryImportProgress, { completed: 1, total: 1, added: 1, skipped: 0, failed: 0 });
+      return { added: 1, skipped: 0, failures: [] };
+    });
+    ipcMain.handle(IPC.getOverview, () => bootstrap().overview);
     ipcMain.handle(IPC.resetSetup, () => {
       resetCalls++;
       signedIn = false;
@@ -159,6 +196,9 @@ if (!process.versions.electron) {
       return fields.length === 3 && Math.max(...fields.map(r => r.top)) - Math.min(...fields.map(r => r.top)) < 1 &&
         fields.every((r, i) => i === 0 || r.left >= fields[i - 1].right);
     })()`), true, "Scope label and date controls align without overlap");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, "-scope.png"));
+    }
     await js(`(() => {
       const input = document.querySelector('.scope-editor input');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Unsaved scope');
@@ -189,12 +229,7 @@ if (!process.versions.electron) {
     await js("document.querySelector('.theme-toggle').click()");
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
-      await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-      const image = await new Promise((resolve) => {
-        window.webContents.once("paint", (_event, _dirty, frame) => resolve(frame));
-        window.webContents.invalidate();
-      });
-      require("node:fs").writeFileSync(process.env.MCAPS_SMOKE_SCREENSHOT, image.toPNG());
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT);
     }
     await click("Settings");
     await wait(() => js("Boolean(document.querySelector('.updates-panel'))"));
@@ -220,11 +255,22 @@ if (!process.versions.electron) {
     await wait(() => js("document.body.innerText.includes('Sign in to MSX')"));
     await click("Sign in with MSX");
     await wait(() => js("document.body.innerText.includes('Choose your sales territories')"));
-    await click("Use manual account lookup");
+    await wait(() => js("Boolean(document.querySelector('.territory-groups input[type=checkbox]'))"));
+    await js("document.querySelector('.territory-groups input[type=checkbox]').click()");
+    await click("Continue with 1 territory");
     await wait(() => js("document.body.innerText.includes('Set your milestone window')"));
     await click("Continue");
-    await wait(() => js("document.body.innerText.includes('Add your first customer')"));
-    console.log("MCAPS UI smoke passed: Fluent shell/theme, anchored profile/Settings, update checks/download/cancellation and dirty-form guard, confirmed Reset, and full privacy/sign-in/scope/customer first-run flow.");
+    await wait(() => js("document.body.innerText.includes('Review top-parent accounts') && document.body.innerText.includes('TPID 000')"));
+    assert.equal(imports, 0, "Preview never imports before confirmation");
+    assert.equal(await js("document.querySelector('.app-shell') === null"), true, "Main UI stays gated during onboarding");
+    await click("Confirm and import top parents");
+    await wait(() => js("document.body.innerText.includes('Import complete')"));
+    assert.equal(imports, 1);
+    assert.equal(await js("document.querySelector('.app-shell') === null"), true, "Do not exit setup after the first account is added");
+    await click("Open workspace");
+    await wait(() => js("Boolean(document.querySelector('.app-shell'))"));
+    assert.equal(await js("document.querySelector('.sidebar-profile').innerText.includes('Demo role')"), true);
+    console.log("MCAPS UI smoke passed: aligned date controls, Fluent styling/profile, updates and dirty guards, retained-data Reset, manual fallback, and full sign-in/territory/preview/progress/import onboarding.");
     window.destroy();
     app.exit(0);
   }).catch((error) => {

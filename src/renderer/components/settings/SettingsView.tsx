@@ -92,6 +92,7 @@ export function SettingsView() {
           {overview.accounts.length} account(s) tracked. Add, fetch, or remove accounts
           from the Portfolio page.
         </p>
+        <p>{settings.territoryIds.length} sales territories selected. Use Add customer on Portfolio to review or change the selection and import more top parents.</p>
         <Button variant="secondary" onClick={() => navigate({ name: "portfolio" })}>
           Go to Portfolio
         </Button>

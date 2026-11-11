@@ -17,10 +17,11 @@ import { SettingsView } from "./components/settings/SettingsView";
 import { UpdatesPanel } from "./components/settings/UpdatesPanel";
 import { UpdateProvider } from "./state/UpdateProvider";
 import { ToastViewport } from "./components/ui/ToastViewport";
+import { Avatar } from "@fluentui/react-components";
 
 function StartupUpdates() {
   const { state } = useAppData();
-  if (state?.settings.privacyAccepted && state.auth.signedIn && state.overview.accounts.length > 0) return null;
+  if (state?.settings.privacyAccepted && state.auth.signedIn && state.settings.onboardingComplete) return null;
   return (
     <>
       <details className="startup-updates">
@@ -77,7 +78,10 @@ function AppContent() {
 
   if (state.auth.checking) {
     return <div className="gate-screen"><div className="gate-card">
+      <Avatar name={state.profile?.displayName ?? state.auth.name ?? "User"} size={64} color="colorful"
+        {...(state.profile?.photoDataUrl ? { image: { src: state.profile.photoDataUrl } } : {})} />
       <h1>{state.profile?.displayName ?? "Welcome back"}</h1>
+      <p>{state.profile?.jobTitle}</p>
       <Spinner label="Restoring your MSX session..." />
     </div></div>;
   }
@@ -103,15 +107,16 @@ function AppContent() {
     );
   }
 
-  if (state.overview.accounts.length === 0) {
+  if (!state.settings.onboardingComplete) {
     return (
       <FirstRunFlow
         settings={state.settings}
         onScopeSaved={async (settings) => {
           await saveSettings(settings);
         }}
-        onAccountAdded={() => {
-          void refreshOverview();
+        onComplete={async () => {
+          await refreshOverview();
+          await saveSettings({ ...state.settings, onboardingComplete: true });
         }}
       />
     );

@@ -8,7 +8,34 @@ The workspace uses Microsoft **Fluent UI React v9** components, Fluent icons, an
 
 Fluent packages are build-time dependencies: Vite bundles the required renderer code/icons into the app, avoiding shipping the entire component/icon source trees in the Electron runtime.
 
-**Settings > Reset setup** signs out, archives tracked customer registrations, and restores default setup preferences/privacy consent. Confirmation requires typing `RESET`. The same privacy, sign-in, milestone-window, and first-customer flow runs again. Customer data/history, encrypted database/key, team, and POD records are retained; re-adding a customer reconnects its previous identity and history. Reset refuses to run while application operations or an update restart are active.
+**Settings > Reset setup** signs out, clears the profile/photo/token cache and territory selection, archives tracked customer registrations, and restores default setup preferences/privacy consent. Confirmation requires typing `RESET`. The same privacy, MSX sign-in, sales-territory, milestone-window, and import flow runs again. Customer data/history, encrypted database/key, team, and POD records are retained; re-adding a customer reconnects its previous identity and history. Reset refuses to run while application operations or an update restart are active.
+
+### Connection and sign-in
+
+`msx-connection.json` contains the bundled, non-secret connection defaults. Override it locally with a complete `connection.json` in the app data directory (`%LOCALAPPDATA%\CSU Console`):
+
+- `tenant`: Entra tenant ID/domain, or `organizations`.
+- `clientId`: public-client application ID.
+- `resourceUrl`: HTTPS MSX/Dataverse origin, without an API path.
+- `appId`: Dataverse model-driven application ID used in record links.
+
+Restart the app after changing connection configuration. Never put tokens, passwords, or client secrets in these files. The registration must support public-client authorization-code/PKCE with a `http://localhost` loopback redirect, delegated Dataverse `user_impersonation`, and delegated Microsoft Graph `User.Read` (including any tenant-required admin consent). The inherited client defaults are not a guarantee of Graph consent in every tenant.
+
+MSAL opens the system browser; cancellation and a two-minute timeout release the pending flow so it can be retried. Later launches display the cached profile while silently validating the session. The main workspace remains gated until authentication and onboarding complete. Expired API tokens receive one forced silent refresh; an interaction-required response returns to sign-in rather than opening an unexpected background browser.
+
+Graph `/me` profile JSON and the photo are stored as separate AES-encrypted records/blobs in the existing local SQLite vault, not in the protected MSAL token-cache file. Cached profiles are matched to the signed-in account before display and refreshed in the background. Photo HTTP 404 uses initials; other profile/consent errors remain visible in Settings with retry. Neither tokens nor profile/customer data are logged.
+
+### Territory onboarding and verification notes
+
+The picker reads and pages `territories` under the signed-in user's delegated Dataverse permissions. **Access scope is Dataverse security trimming, not personal territory assignment.** A read-only live check confirmed the tested user had no direct `systemusers._territoryid_value` assignment, so an assignment-only filter would incorrectly hide usable territories. No organization/group names or territory names are hardcoded. Search spans names, `msp_salesgroupname`, `msp_salesunitname`, and `msp_accountteamunitgroupname`. At most 200 matching rows are rendered at once; search and "Show selected only" make the complete discovered list navigable.
+
+Confirmed against live MSX: the grouping fields above, empty parent-territory lookups in representative records, and absence of territory `statecode`, `statuscode`, or a fiscal-year attribute. Historical `FYnn-...` names coexist with unversioned names. The app excludes explicit names for other fiscal years using the Microsoft July-June calendar and labels unversioned records and unavailable status explicitly. **Limitation:** an unversioned territory cannot independently be certified active from this schema; the app does not invent an inactive filter or infer a portfolio entity.
+
+Also confirmed live: `accounts._territoryid_value`, the TPID attribute `msp_mstopparentid`, and `msp_parentinglevelcode = 861980000` for the top parent. The app pages territory accounts, resolves all accounts sharing each TPID, requires exactly one accessible top parent, and deduplicates by TPID across selected territories. It never falls back to tracking a selected child. Manual name/TPID lookup uses the same top-parent resolution; distinct TPIDs are not merged merely because their names match.
+
+The read-only preview shows territory/top-parent/already-present counts and unresolved accounts before any account is added. Confirmed imports reuse the normal account-add/history-restoration logic, run sequentially under the operation gate, publish progress, and report failures explicitly. Re-previewing a partial import skips successful TPIDs. Previews are short-lived, account-bound, single-use, and invalidated by sign-out/reset. Setup does not finish when the first account lands; the user acknowledges the completed or partial import.
+
+Live verification did not import customer data, reset a real profile, or change permissions. A full interactive login and real Graph profile/photo consent flow still require validation in the target tenant; unit/renderer tests use synthetic data.
 
 ## Security model
 

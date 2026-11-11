@@ -46,6 +46,41 @@ export interface SalesTerritory {
   fiscalYear: string | null;
 }
 
+export interface TerritoryImportAccount {
+  id: string;
+  name: string;
+  tpid: string;
+  alreadyPresent: boolean;
+}
+
+export interface TerritoryImportIssue {
+  id: string;
+  name: string;
+  message: string;
+}
+
+export interface TerritoryImportPreview {
+  id: string;
+  territories: SalesTerritory[];
+  accounts: TerritoryImportAccount[];
+  alreadyPresent: number;
+  unresolved: TerritoryImportIssue[];
+}
+
+export interface TerritoryImportProgress {
+  completed: number;
+  total: number;
+  added: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface TerritoryImportResult {
+  added: number;
+  skipped: number;
+  failures: TerritoryImportIssue[];
+}
+
 export interface AccountSearchResult {
   id: string;
   name: string;
@@ -339,6 +374,9 @@ export interface DesktopApi {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
   listTerritories(): Promise<SalesTerritory[]>;
+  previewTerritoryImport(territoryIds: string[]): Promise<TerritoryImportPreview>;
+  importTerritories(previewId: string): Promise<TerritoryImportResult>;
+  onTerritoryImportProgress(listener: (progress: TerritoryImportProgress) => void): () => void;
   searchAccounts(term: string): Promise<AccountSearchResult[]>;
   previewAccount(accountId: string): Promise<AccountPreview>;
   addAccount(accountId: string): Promise<PortfolioAccount>;

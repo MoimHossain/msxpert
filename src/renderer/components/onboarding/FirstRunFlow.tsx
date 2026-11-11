@@ -1,21 +1,23 @@
 import { useState } from "react";
-import type { AppSettings, PortfolioAccount } from "../../../shared/types";
+import type { AppSettings } from "../../../shared/types";
 import { ScopeEditor } from "./ScopeEditor";
 import { AccountOnboarding } from "./AccountOnboarding";
 import { BrandMark } from "../layout/BrandMark";
 import { TerritoryPicker } from "./TerritoryPicker";
+import { TerritoryImport } from "./TerritoryImport";
 
 interface FirstRunFlowProps {
   settings: AppSettings;
   onScopeSaved: (settings: AppSettings) => Promise<void>;
-  onAccountAdded: (account: PortfolioAccount) => void;
+  onComplete: () => Promise<void>;
 }
 
 type Step = "territories" | "scope" | "account";
 
-export function FirstRunFlow({ settings, onScopeSaved, onAccountAdded }: FirstRunFlowProps) {
+export function FirstRunFlow({ settings, onScopeSaved, onComplete }: FirstRunFlowProps) {
   const [step, setStep] = useState<Step>("territories");
   const [savingScope, setSavingScope] = useState(false);
+  const [manual, setManual] = useState(false);
 
   return (
     <div className="gate-screen">
@@ -32,9 +34,10 @@ export function FirstRunFlow({ settings, onScopeSaved, onAccountAdded }: FirstRu
           <TerritoryPicker selectedIds={settings.territoryIds}
             onConfirm={async (ids) => {
               await onScopeSaved({ ...settings, territoryIds: ids });
+              setManual(false);
               setStep("scope");
             }}
-            onManual={() => setStep("scope")} />
+            onManual={() => { setManual(true); setStep("scope"); }} />
         </> : step === "scope" ? (
           <>
             <h1>Set your milestone window</h1>
@@ -57,16 +60,17 @@ export function FirstRunFlow({ settings, onScopeSaved, onAccountAdded }: FirstRu
               }}
             />
           </>
-        ) : (
+        ) : manual ? (
           <>
             <h1>Add your first customer</h1>
             <p>
               Search by customer name or enter a TPID. MCAPS Console always resolves and
               tracks the top-parent account to prevent duplicate milestones.
             </p>
-            <AccountOnboarding onAdded={onAccountAdded} />
+            <AccountOnboarding onAdded={onComplete} onCancel={() => setStep("territories")} />
           </>
-        )}
+        ) : <TerritoryImport territoryIds={settings.territoryIds}
+          onDone={onComplete} onBack={() => setStep("territories")} />}
       </div>
     </div>
   );

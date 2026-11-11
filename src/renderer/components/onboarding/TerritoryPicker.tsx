@@ -21,6 +21,8 @@ export function TerritoryPicker({ selectedIds, onConfirm, onManual }: TerritoryP
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [selectedOnly, setSelectedOnly] = useState(false);
+  const [unavailable, setUnavailable] = useState(0);
   useUpdateBlocker(busy || selected.size > 0);
 
   useEffect(() => {
@@ -30,7 +32,9 @@ export function TerritoryPicker({ selectedIds, onConfirm, onManual }: TerritoryP
     window.desktop.listTerritories().then((items) => {
       if (!cancelled) {
         setTerritories(items);
-        setSelected((previous) => new Set([...previous].filter((id) => items.some((item) => item.id === id))));
+        const available = new Set(items.map((item) => item.id));
+        setUnavailable(selectedIds.filter((id) => !available.has(id)).length);
+        setSelected((previous) => new Set([...previous].filter((id) => available.has(id))));
       }
     }).catch((error: unknown) => {
       if (!cancelled) setError(error instanceof Error ? error.message : String(error));
@@ -38,23 +42,30 @@ export function TerritoryPicker({ selectedIds, onConfirm, onManual }: TerritoryP
     return () => { cancelled = true; };
   }, [retry]);
 
-  const groups = useMemo(() => {
+  const { groups, matchCount } = useMemo(() => {
     const result = new Map<string, SalesTerritory[]>();
     const term = search.trim().toLowerCase();
-    for (const territory of territories) {
+    const matching = territories.filter((territory) =>
+      (!selectedOnly || selected.has(territory.id)) &&
+      [territory.name, territory.salesGroup, territory.salesUnit, territory.accountTeamUnitGroup]
+        .join(" ").toLowerCase().includes(term));
+    for (const territory of matching.slice(0, 200)) {
       const group = [territory.salesGroup, territory.salesUnit, territory.accountTeamUnitGroup]
         .map((value) => value ?? "Not specified").join(" / ");
-      if (!`${group} ${territory.name}`.toLowerCase().includes(term)) continue;
       result.set(group, [...(result.get(group) ?? []), territory]);
     }
-    return [...result.entries()].sort(([left], [right]) => left.localeCompare(right));
-  }, [territories, search]);
+    return { groups: [...result.entries()].sort(([left], [right]) => left.localeCompare(right)), matchCount: matching.length };
+  }, [territories, search, selectedOnly, selected]);
 
   return <div className="territory-picker">
     <p>Select one or more sales territories visible to your MSX identity. This is the security-trimmed list, not a list of personal assignments.</p>
     <p className="field-hint">Other fiscal-year names are excluded. MSX does not publish active/status or fiscal-year fields here; unversioned records are labelled explicitly.</p>
     <TextField label="Find territories" value={search} onChange={(event) => setSearch(event.target.value)}
       placeholder="Search territory, sales group, sales unit, or account team unit group" />
+    <Checkbox label="Show selected only" checked={selectedOnly} onChange={(_event, data) => setSelectedOnly(Boolean(data.checked))} />
+    {unavailable > 0 ? <p role="status">{unavailable} saved selections are no longer available for this fiscal year and were deselected.</p> : null}
+    {!loading && !error ? <p className="field-hint">Showing {Math.min(200, matchCount)} of {matchCount} matches.
+      {matchCount > 200 ? " Refine the search to find other territories; selections are kept across searches." : ""}</p> : null}
     {loading ? <Spinner label="Loading accessible territories..." /> : null}
     {error ? <ErrorBanner message={error} onRetry={() => setRetry((current) => current + 1)} /> : null}
     {!loading && !error ? <div className="territory-groups">
@@ -78,7 +89,7 @@ export function TerritoryPicker({ selectedIds, onConfirm, onManual }: TerritoryP
           setError(null);
           void onConfirm([...selected]).catch((error: unknown) =>
             setError(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false));
-        }}>Continue with {selected.size} territories</Button>
+        }}>Continue with {selected.size} {selected.size === 1 ? "territory" : "territories"}</Button>
       {onManual ? <Button disabled={busy} onClick={onManual}>Use manual account lookup</Button> : null}
     </div>
   </div>;
