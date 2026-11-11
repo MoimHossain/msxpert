@@ -2,6 +2,7 @@ import type {
   AccountPreview,
   AccountSearchResult,
   AccountTreeNode,
+  AccountTerritory,
   GoneReason,
   NormalizedMilestone,
   ScopeSettings,
@@ -418,12 +419,12 @@ export class MsxClient {
     const records = await this.collection<RawRecord>(
       queryPath("accounts", {
         "$select":
-          "accountid,name,msp_mstopparentid,msp_parentinglevelcode,address1_country",
+          "accountid,name,msp_mstopparentid,msp_parentinglevelcode,address1_country,_territoryid_value",
         "$filter": `msp_mstopparentid eq '${escaped}'`,
         "$orderby": "name asc",
       }),
     );
-    return records.map((record) => {
+    return Promise.all(records.map(async (record) => {
       const id = String(record.accountid);
       return {
         id,
@@ -432,8 +433,38 @@ export class MsxClient {
         parentingLevel: parentingLevel(record),
         country: stringOrNull(record.address1_country),
         url: accountUrl(id),
+        territory: await this.accountTerritory(record),
       };
-    });
+    }));
+  }
+
+  private async accountTerritory(record: RawRecord): Promise<AccountTerritory | null> {
+    if (record._territoryid_value == null) return null;
+    const id = z.guid().parse(record._territoryid_value).toLowerCase();
+    const name = formatted(record, "_territoryid_value");
+    if (name) return { id, name };
+    const territory = z.object({ territoryid: z.guid(), name: z.string().min(1) }).parse(
+      await this.request<unknown>(queryPath(`territories(${id})`, { "$select": "territoryid,name" })),
+    );
+    if (territory.territoryid.toLowerCase() !== id) throw new Error("MSX returned an unexpected territory.");
+    return { id, name: territory.name };
+  }
+
+  async getAccountTerritories(ids: string[]): Promise<Map<string, AccountTerritory | null>> {
+    const requested = new Set(ids.map((id) => z.guid().parse(id).toLowerCase()));
+    const territories = new Map<string, AccountTerritory | null>();
+    for (const batch of chunks([...requested], GUID_CHUNK)) {
+      const records = await this.collection<RawRecord>(queryPath("accounts", {
+        "$select": "accountid,_territoryid_value",
+        "$filter": batch.map((id) => `accountid eq ${id}`).join(" or "),
+      }));
+      for (const record of records) {
+        const id = z.guid().parse(record.accountid).toLowerCase();
+        if (!requested.has(id)) throw new Error("MSX returned territory details for an unexpected account.");
+        territories.set(id, await this.accountTerritory(record));
+      }
+    }
+    return territories;
   }
 
   async previewAccount(

@@ -143,4 +143,41 @@ describe("data-preserving setup reset", () => {
     await fetching;
     expect(service.listAccounts()).toEqual([account]);
   });
+
+  it("backfills existing account territories once without fetching or changing milestone history", async () => {
+    const territory = { id: "demo-territory", name: "Demo.FinancialServices.001" };
+    const metadata = vi.spyOn(msx, "getAccountTerritories").mockResolvedValue(new Map([[account.msxAccountId, territory]]));
+    const milestones = vi.spyOn(msx, "fetchMilestones");
+    const tree = vi.spyOn(msx, "resolveAccountTree");
+    await service.refreshAccountTerritories();
+    expect(service.getOverview().accounts[0]?.territory).toEqual(territory);
+    expect(store.get(`snapshots:${account.id}`, account.createdAt)).toEqual({ retained: "snapshot" });
+    expect(store.get(`changes:${account.id}`, account.createdAt)).toEqual({ retained: "change history" });
+    expect(store.get(`watermark:${account.id}`, "current")).toEqual({ reviewedThrough: account.createdAt });
+    expect(milestones).not.toHaveBeenCalled();
+    expect(tree).not.toHaveBeenCalled();
+    await service.refreshAccountTerritories();
+    expect(metadata).toHaveBeenCalledExactlyOnceWith([account.msxAccountId]);
+  });
+
+  it("keeps unavailable territory metadata unresolved and retryable instead of marking it unassigned", async () => {
+    const metadata = vi.spyOn(msx, "getAccountTerritories").mockResolvedValueOnce(new Map())
+      .mockRejectedValueOnce(new Error("MSX request failed with HTTP 403."));
+    await expect(service.refreshAccountTerritories()).rejects.toThrow("every account");
+    expect(service.listAccounts()).toEqual([account]);
+    await expect(service.refreshAccountTerritories()).rejects.toThrow("HTTP 403");
+    expect(service.listAccounts()).toEqual([account]);
+    expect(metadata).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists reassigned and explicitly cleared territories during the normal account refresh", async () => {
+    const territory = { id: "demo-territory", name: "Demo.FinancialServices.001" };
+    vi.spyOn(msx, "resolveAccountTree").mockResolvedValueOnce([{ ...tree[0]!, territory }])
+      .mockResolvedValueOnce([{ ...tree[0]!, territory: null }]);
+    vi.spyOn(msx, "fetchMilestones").mockResolvedValue([]);
+    await service.fetchAccounts();
+    expect(service.getOverview().accounts[0]?.territory).toEqual(territory);
+    await service.fetchAccounts();
+    expect(service.getOverview().accounts[0]?.territory).toBeNull();
+  });
 });

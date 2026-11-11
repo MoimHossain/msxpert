@@ -163,6 +163,7 @@ export class PortfolioService {
       msxAccountId: preview.topParent.id,
       country: preview.topParent.country,
       createdAt: archived?.createdAt ?? new Date().toISOString(),
+      ...(preview.topParent.territory !== undefined ? { territory: preview.topParent.territory } : {}),
     };
     try {
       await this.ingestAccount(account);
@@ -277,6 +278,23 @@ export class PortfolioService {
     };
   }
 
+  async refreshAccountTerritories(): Promise<void> {
+    const accounts = this.listAccounts().filter((account) => account.territory === undefined);
+    if (!accounts.length) return;
+    const territories = await this.msx.getAccountTerritories(accounts.map((account) => account.msxAccountId));
+    if (accounts.some((account) => !territories.has(account.msxAccountId.toLowerCase()))) {
+      throw new Error("MSX could not return territory details for every account. Check your access and retry.");
+    }
+    this.store.transaction(() => {
+      for (const account of accounts) {
+        const current = this.store.get<PortfolioAccount>(ACCOUNT_KIND, account.id);
+        if (current?.territory === undefined && current?.msxAccountId === account.msxAccountId) {
+          this.store.put(ACCOUNT_KIND, account.id, { ...current, territory: territories.get(account.msxAccountId.toLowerCase()) ?? null });
+        }
+      }
+    });
+  }
+
   getAccountState(accountId: string): AccountState {
     const account = this.store.get<PortfolioAccount>(ACCOUNT_KIND, accountId);
     if (!account) throw new Error("The selected portfolio account does not exist.");
@@ -351,6 +369,8 @@ export class PortfolioService {
     try {
       const settings = this.getSettings();
       const tree = await this.msx.resolveAccountTree(account.tpid);
+      const top = tree.find((record) => record.id.toLowerCase() === account.msxAccountId.toLowerCase());
+      if (top?.territory !== undefined) account.territory = top.territory;
       const milestones = await this.msx.fetchMilestones(
         settings.scope,
         tree.map((record) => record.id),
@@ -421,6 +441,8 @@ export class PortfolioService {
       };
 
       this.store.transaction(() => {
+        const active = this.store.get<PortfolioAccount>(ACCOUNT_KIND, account.id);
+        if (active && account.territory !== undefined) this.store.put(ACCOUNT_KIND, account.id, { ...active, territory: account.territory });
         this.store.put(snapshotsKind(account.id), id, { milestones, manifest });
         this.store.put(changesKind(account.id), id, document);
         this.store.put(currentKind(account.id), "milestones", milestones);

@@ -35,6 +35,7 @@ if (!process.versions.electron) {
   let downloads = 0;
   let imports = 0;
   let profileRefreshes = 0;
+  let territoryRefreshes = 0;
   const demoTerritory = {
     id: "00000000-0000-0000-0000-000000000001", name: "Demo territory",
     accountTeamUnitGroup: "Demo group", salesUnit: "Demo unit", salesGroup: "Demo sales group", fiscalYear: null,
@@ -134,6 +135,25 @@ if (!process.versions.electron) {
     assert.deepEqual(await js(readLayout), before, "Dismissing the tooltip must not change the theme or layout");
   };
   const checkPortfolioCards = async () => {
+    await wait(() => js("document.querySelectorAll('.territory-account-group').length === 2"));
+    assert.deepEqual(await js(`[...document.querySelectorAll('.territory-account-group')].map(group => ({
+      name: group.querySelector('.territory-name').textContent,
+      accounts: [...group.querySelectorAll('.account-card-title')].map(name => name.textContent),
+    }))`), [
+      { name: "Demo.FinancialServices.001", accounts: ["Test account", "Demo Financial Services"] },
+      { name: "Demo.FinancialServices.002", accounts: ["Example Holdings"] },
+    ], "Accounts appear once under their canonical MSX territory");
+    assert.equal(await js(`(() => {
+      const heading = document.querySelector('.territory-name');
+      const selection = getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(heading);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const selectable = getComputedStyle(heading).userSelect === 'text' && selection.toString() === heading.textContent;
+      selection.removeAllRanges();
+      return selectable;
+    })()`), true, "Territory names are selectable text that can be copied without modifying the clipboard");
     assert.deepEqual(await js(`[
       ...document.querySelectorAll('.portfolio-summary-grid > .stat-group')
     ].map(group => [...group.querySelectorAll('.stat-label')].map(label => label.textContent))`), [
@@ -182,6 +202,63 @@ if (!process.versions.electron) {
       if (!metric) return false;
       metric.click(); return true;
     })()`), true, `Clickable metric: ${label}`);
+  };
+  const checkOwnerScrolling = async () => {
+    await clickMetric("Owners");
+    await wait(() => js("document.querySelectorAll('.metric-drilldown tbody tr').length >= 20"));
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(() => {
+          const filters = document.querySelector('.milestone-filters');
+          return [...filters.querySelectorAll('.field')].every(field => {
+            const cell = field.getBoundingClientRect();
+            return [...field.querySelectorAll('.fui-Select, select, .fui-Input')].every(control => {
+              const rect = control.getBoundingClientRect();
+              return rect.left >= cell.left - 1 && rect.right <= cell.right + 1;
+            });
+          });
+        })()`), true, `Owners filters stay within their grid cells at ${width}px`);
+        const scrollState = await js(`(async () => {
+          const root = document.scrollingElement;
+          const page = document.querySelector('.app-content');
+          const table = document.querySelector('.metric-drilldown .table-scroll');
+          const fixed = [...document.querySelectorAll('.app-topbar, .sidebar, .app-statusbar')];
+          page.scrollTop = 0;
+          const before = fixed.map(element => element.getBoundingClientRect().top);
+          page.scrollTop = page.scrollHeight;
+          table.scrollLeft = 100;
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          const result = {
+            documentHeightContained: root.scrollHeight <= root.clientHeight + 1,
+            documentWidthContained: root.scrollWidth <= root.clientWidth + 1,
+            documentStationary: root.scrollTop === 0 && root.scrollLeft === 0,
+            pageScrollsVertically: page.scrollTop > 0 && page.scrollLeft === 0,
+            shellStationary: fixed.every((element, index) => element.getBoundingClientRect().top === before[index]),
+            tableHasNoVerticalOverflow: table.scrollHeight <= table.clientHeight + 1,
+            tableCanScrollHorizontallyWhenNeeded: table.scrollWidth <= table.clientWidth + 1 || table.scrollLeft > 0,
+          };
+          page.scrollTop = 0;
+          return result;
+        })()`);
+        assert.deepEqual(scrollState, {
+          documentHeightContained: true, documentWidthContained: true, documentStationary: true,
+          pageScrollsVertically: true, shellStationary: true, tableHasNoVerticalOverflow: true,
+          tableCanScrollHorizontallyWhenNeeded: true,
+        }, `Only the page scrolls vertically, the table scrolls horizontally when needed, and shell chrome stays fixed at ${width}px`);
+      }
+    } finally {
+      window.setContentSize(...original);
+      await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
+    }
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-owners.png`));
+    }
+    await click("Close");
   };
   app.whenReady().then(async () => {
     const bootstrap = () => {
@@ -236,13 +313,22 @@ if (!process.versions.electron) {
       return { added: 1, skipped: 0, failures: [] };
     });
     ipcMain.handle(IPC.getOverview, () => bootstrap().overview);
+    ipcMain.handle(IPC.refreshAccountTerritories, () => {
+      territoryRefreshes++;
+      demoAccounts.forEach((account, index) => {
+        account.territory = {
+          id: index < 2 ? demoTerritory.id : "00000000-0000-0000-0000-000000000002",
+          name: index < 2 ? "Demo.FinancialServices.001" : "Demo.FinancialServices.002",
+        };
+      });
+    });
     ipcMain.handle(IPC.getAccountState, (_event, id) => ({
-      milestones: [{
-        id: `milestone-${id}`, name: "Demo migration", number: "DEMO-1", date: "2027-01-15",
+      milestones: Array.from({ length: 60 }, (_, index) => ({
+        id: `milestone-${id}-${index}`, name: "Demo migration", number: `DEMO-${index}`, date: "2027-01-15",
         status: "On Track", statusValue: 861980000, commitment: "Committed",
-        ownerId: "demo-owner", ownerName: "Demo Owner", accountId: id, accountName: "Test account",
+        ownerId: "demo-owner", ownerName: "Demo Owner with a long display name for responsive controls", accountId: id, accountName: "Test account",
         monthlyUse: 1000, monthlyUseFormatted: "$1,000", url: "https://example.invalid/milestone",
-      }],
+      })),
     }));
     ipcMain.handle(IPC.resetSetup, () => {
       resetCalls++;
@@ -337,6 +423,7 @@ if (!process.versions.electron) {
     await wait(() => js("document.querySelector('.metric-drilldown h2')?.textContent === 'Portfolio accounts'"));
     assert.equal(await js("document.querySelectorAll('.metric-drilldown tbody tr').length"), 3);
     await click("Close");
+    await checkOwnerScrolling();
     await clickMetric("On track");
     await wait(() => js("Boolean(document.querySelector('.milestone-table-wrap'))"));
     assert.equal(await js("[...document.querySelectorAll('.milestone-filters select')].some(select => select.value === 'On Track')"), true,
@@ -356,6 +443,7 @@ if (!process.versions.electron) {
     await js("document.querySelector('.theme-toggle').click()");
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
     await checkPortfolioCards();
+    await checkOwnerScrolling();
     await hoverThemeToggle();
     window.webContents.debugger.detach();
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
@@ -405,7 +493,8 @@ if (!process.versions.electron) {
     await click("Open workspace");
     await wait(() => js("Boolean(document.querySelector('.app-shell'))"));
     assert.equal(await js("document.querySelector('.sidebar-profile').innerText.includes('Demo role')"), true);
-    console.log("MCAPS UI smoke passed: three grouped KPI cards and drilldowns, non-overlapping large currency values at three widths in both themes, stable tooltip hover and click-to-toggle, MSX profiles, aligned dates, updates/dirty guards, retained-data Reset, and full territory-import onboarding.");
+    assert.equal(territoryRefreshes, 1, "Legacy territory metadata is loaded once and reused across workspace navigation");
+    console.log("MCAPS UI smoke passed: selectable MSX territory groups, page-only Owners scrolling and contained filters at three widths in both themes, three KPI cards, non-overlapping currency values, stable theme hover, MSX profiles, aligned dates, updates/dirty guards, retained-data Reset, and territory-import onboarding.");
     window.destroy();
     app.exit(0);
   }).catch((error) => {

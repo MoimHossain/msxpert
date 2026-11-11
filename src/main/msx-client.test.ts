@@ -87,6 +87,47 @@ describe("MsxClient query construction", () => {
     vi.unstubAllGlobals();
   });
 
+  it("pages account territory metadata and distinguishes unassigned accounts from missing results", async () => {
+    const first = "00000000-0000-4000-8000-000000000001";
+    const second = "00000000-0000-4000-8000-000000000002";
+    const territory = "00000000-0000-4000-8000-000000000003";
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({
+      value: [{ accountid: first, _territoryid_value: territory,
+        "_territoryid_value@OData.Community.Display.V1.FormattedValue": "Demo territory" }],
+      "@odata.nextLink": "https://microsoftsales.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=demo",
+    })).mockResolvedValueOnce(Response.json({ value: [{ accountid: second, _territoryid_value: null }] }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await new MsxClient({ getAccessToken: async () => "test-only" }).getAccountTerritories([first, second, first]);
+    expect(result.size).toBe(2);
+    expect(result.get(first)).toEqual({ id: territory, name: "Demo territory" });
+    expect(result.has(second)).toBe(true);
+    expect(result.get(second)).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(new URL(String(fetch.mock.calls[0]?.[0])).searchParams.get("$filter")).toBe(`accountid eq ${first} or accountid eq ${second}`);
+  });
+
+  it("loads the territory record when a lookup label is unavailable instead of inventing a name", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const territory = "00000000-0000-4000-8000-000000000002";
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({ value: [{ accountid: id, _territoryid_value: territory }] }))
+      .mockResolvedValueOnce(Response.json({ territoryid: territory, name: "Demo.FinancialServices.001" }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await new MsxClient({ getAccessToken: async () => "test-only" }).getAccountTerritories([id]);
+    expect(result.get(id)?.name).toBe("Demo.FinancialServices.001");
+    expect(new URL(String(fetch.mock.calls[1]?.[0])).pathname).toBe(`/api/data/v9.2/territories(${territory})`);
+  });
+
+  it("includes the canonical territory on the resolved account tree for future imports and refreshes", async () => {
+    const territory = "00000000-0000-4000-8000-000000000003";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ value: [{
+      accountid: "top", msp_mstopparentid: "100", msp_parentinglevelcode: 861980000,
+      _territoryid_value: territory,
+      "_territoryid_value@OData.Community.Display.V1.FormattedValue": "Demo territory",
+    }] })));
+    const top = await new MsxClient({ getAccessToken: async () => "test-only" }).resolveTopParent("100");
+    expect(top.territory).toEqual({ id: territory, name: "Demo territory" });
+  });
+
   it("loads the current profile exclusively from MSX and uses email and initials fallbacks", async () => {
     const id = "00000000-0000-4000-8000-000000000001";
     const fetch = vi.fn().mockResolvedValueOnce(Response.json({ UserId: id }))

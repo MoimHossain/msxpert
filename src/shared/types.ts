@@ -87,6 +87,12 @@ export interface AccountSearchResult {
   tpid: string | null;
   parentingLevel: string | null;
   country: string | null;
+  territory?: AccountTerritory | null;
+}
+
+export interface AccountTerritory {
+  id: string;
+  name: string;
 }
 
 export interface AccountTreeNode {
@@ -96,6 +102,7 @@ export interface AccountTreeNode {
   parentingLevel: string | null;
   country: string | null;
   url: string;
+  territory?: AccountTerritory | null;
 }
 
 export interface AccountPreview {
@@ -113,6 +120,7 @@ export interface PortfolioAccount {
   msxAccountId: string;
   country: string | null;
   createdAt: IsoTimestamp;
+  territory?: AccountTerritory | null;
 }
 
 export interface NormalizedMilestone {
@@ -382,6 +390,7 @@ export interface DesktopApi {
   addAccount(accountId: string): Promise<PortfolioAccount>;
   removeAccount(accountId: string, deleteHistory: boolean): Promise<void>;
   getOverview(): Promise<PortfolioOverview>;
+  refreshAccountTerritories(): Promise<void>;
   getAccountState(accountId: string): Promise<AccountState>;
   fetchAccounts(accountId?: string): Promise<FetchResult>;
   markReviewed(accountId: string): Promise<AccountState>;

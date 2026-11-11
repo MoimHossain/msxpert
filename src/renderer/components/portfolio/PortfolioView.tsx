@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AccountOverview,
   NormalizedMilestone,
@@ -11,6 +11,7 @@ import { StatCard, StatGroup } from "../ui/StatCard";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
+import { ErrorBanner } from "../ui/ErrorBanner";
 import { MilestoneTable } from "../account/MilestoneTable";
 import { AccountCard } from "./AccountCard";
 import { AddAccountModal } from "./AddAccountModal";
@@ -71,6 +72,35 @@ export function PortfolioView() {
     useState<NormalizedMilestone[] | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldownError, setDrilldownError] = useState<string | null>(null);
+  const [territoriesLoading, setTerritoriesLoading] = useState(false);
+  const [territoriesError, setTerritoriesError] = useState<string | null>(null);
+  const missingTerritories = overview.accounts.some((account) => account.territory === undefined);
+  const loadTerritories = useCallback(async () => {
+    setTerritoriesLoading(true);
+    setTerritoriesError(null);
+    try {
+      await window.desktop.refreshAccountTerritories();
+      await refreshOverview();
+    } catch (error) {
+      setTerritoriesError(error instanceof Error ? error.message : String(error));
+    } finally { setTerritoriesLoading(false); }
+  }, [refreshOverview]);
+
+  useEffect(() => {
+    if (missingTerritories) void loadTerritories();
+  }, [missingTerritories, loadTerritories]);
+
+  const territoryGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; accounts: AccountOverview[] }>();
+    for (const account of overview.accounts) {
+      const id = account.territory?.id ?? (account.territory === undefined ? "not-loaded" : "unassigned");
+      const name = account.territory?.name ?? (account.territory === undefined ? "Territory not loaded" : "No territory assigned");
+      const group = groups.get(id) ?? { id, name, accounts: [] };
+      group.accounts.push(account);
+      groups.set(id, group);
+    }
+    return [...groups.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [overview.accounts]);
 
   const totals = useMemo(() => {
     const committed = overview.accounts.reduce((sum, account) => sum + account.committed, 0);
@@ -309,18 +339,38 @@ export function PortfolioView() {
           }
         />
       ) : (
-        <div className="account-grid">
-          {overview.accounts.map((account) => (
-            <AccountCard
-              key={account.id}
-              account={account}
-              onOpen={() => goToAccount(account.id)}
-              onFetch={() => void runFetch(account.id)}
-              onRemove={() => setRemovingAccount(account)}
-              fetching={activeFetch === account.id || activeFetch === ALL_SENTINEL}
-            />
+        <section className="portfolio-accounts" aria-labelledby="portfolio-accounts-heading">
+          <div className="portfolio-accounts-heading">
+            <div>
+              <p className="section-eyebrow">Customer workspace</p>
+              <h2 id="portfolio-accounts-heading">Accounts by territory</h2>
+              <p>Top-parent accounts grouped by their MSX territory. Territory names can be selected and copied.</p>
+            </div>
+            <span className="territory-account-count">{formatNumber(overview.accounts.length)} accounts</span>
+          </div>
+          {territoriesLoading ? <Spinner label="Loading account territories..." /> : null}
+          {territoriesError ? <ErrorBanner message={`Account territories could not be loaded. ${territoriesError}`} onRetry={() => void loadTerritories()} /> : null}
+          {territoryGroups.map((group) => (
+            <section className="territory-account-group" key={group.id} aria-label={group.name}>
+              <div className="territory-account-heading">
+                <h3 className="territory-name" title="Select and copy this territory name">{group.name}</h3>
+                <span className="territory-account-count">{formatNumber(group.accounts.length)} {group.accounts.length === 1 ? "account" : "accounts"}</span>
+              </div>
+              <div className="account-grid">
+                {group.accounts.map((account) => (
+                  <AccountCard
+                    key={account.id}
+                    account={account}
+                    onOpen={() => goToAccount(account.id)}
+                    onFetch={() => void runFetch(account.id)}
+                    onRemove={() => setRemovingAccount(account)}
+                    fetching={activeFetch === account.id || activeFetch === ALL_SENTINEL}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
-        </div>
+        </section>
       )}
 
       {showAddModal ? (

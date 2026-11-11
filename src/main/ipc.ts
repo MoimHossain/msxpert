@@ -153,6 +153,7 @@ export function registerIpc(
     ({ accountId, deleteHistory }) => service.removeAccount(accountId, deleteHistory),
   );
   handle(IPC.getOverview, () => service.getOverview());
+  handle(IPC.refreshAccountTerritories, () => service.refreshAccountTerritories());
   register(IPC.getAccountState, idSchema, (accountId) =>
     service.getAccountState(accountId),
   );

@@ -27,6 +27,7 @@ export const IPC = {
   addAccount: "accounts:add",
   removeAccount: "accounts:remove",
   getOverview: "portfolio:overview",
+  refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",
   fetchAccounts: "portfolio:fetch",
   markReviewed: "portfolio:mark-reviewed",

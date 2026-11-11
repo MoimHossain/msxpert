@@ -40,6 +40,7 @@ const IPC = {
   addAccount: "accounts:add",
   removeAccount: "accounts:remove",
   getOverview: "portfolio:overview",
+  refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",
   fetchAccounts: "portfolio:fetch",
   markReviewed: "portfolio:mark-reviewed",
@@ -104,6 +105,7 @@ const api: DesktopApi = {
   removeAccount: (accountId: string, deleteHistory: boolean) =>
     ipcRenderer.invoke(IPC.removeAccount, { accountId, deleteHistory }),
   getOverview: () => ipcRenderer.invoke(IPC.getOverview),
+  refreshAccountTerritories: () => ipcRenderer.invoke(IPC.refreshAccountTerritories),
   getAccountState: (accountId: string) =>
     ipcRenderer.invoke(IPC.getAccountState, accountId),
   fetchAccounts: (accountId?: string) =>
