@@ -20,6 +20,8 @@ const settingsSchema = z.object({
   }),
   retentionSnapshots: z.number().int().min(1).max(500),
   privacyAccepted: z.boolean(),
+  territoryIds: z.array(z.guid()).max(1000),
+  onboardingComplete: z.boolean(),
 });
 
 const userSchema = z.object({
@@ -117,6 +119,7 @@ export function registerIpc(
   handle(IPC.refreshProfile, () => service.profiles.refresh());
   handle(IPC.cancelSignIn, () => auth.cancelSignIn());
   handle(IPC.getSettings, () => service.getSettings());
+  handle(IPC.listTerritories, () => msx.listTerritories());
   register(IPC.updateSettings, settingsSchema, (settings) =>
     service.updateSettings(settings),
   );

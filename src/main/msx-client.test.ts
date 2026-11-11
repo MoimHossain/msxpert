@@ -180,4 +180,44 @@ describe("MsxClient query construction", () => {
     expect(filter).not.toContain("and  and");
     expect(filter).toContain("msp_milestonedate ge 2026-07-01");
   });
+
+  it("pages security-visible territories and removes other fiscal-year names without assuming status fields", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        value: [
+          { territoryid: "current", name: "FY27-Demo.Current", msp_salesunitname: "Demo unit" },
+          { territoryid: "old", name: "FY25-Demo.Old", msp_salesunitname: "Old unit" },
+        ],
+        "@odata.nextLink": "https://microsoftsales.crm.dynamics.com/api/data/v9.2/territories?$skiptoken=demo",
+      }))
+      .mockResolvedValueOnce(Response.json({
+        value: [{ territoryid: "unversioned", name: "Demo.Territory", msp_accountteamunitgroupname: "Demo group" }],
+      }));
+    vi.stubGlobal("fetch", fetch);
+    const client = new MsxClient({ getAccessToken: async () => "test-only" });
+    const territories = await client.listTerritories(new Date("2026-11-11T00:00:00Z"));
+    expect(territories.map((item) => item.id)).toEqual(["current", "unversioned"]);
+    expect(territories[1]).toMatchObject({ fiscalYear: null, accountTeamUnitGroup: "Demo group" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const url = new URL(String(fetch.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("$filter")).toBeNull();
+    expect(url.searchParams.get("$select")).not.toContain("statecode");
+  });
+
+  it("rejects foreign pagination links before sending credentials", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({
+      value: [], "@odata.nextLink": "https://example.invalid/territories",
+    }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(new MsxClient({ getAccessToken: async () => "test-only" }).listTerritories())
+      .rejects.toThrow("unexpected API origin");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops a cyclic pagination response instead of hanging onboarding", async () => {
+    const next = "https://microsoftsales.crm.dynamics.com/api/data/v9.2/territories?$skiptoken=repeat";
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ value: [], "@odata.nextLink": next })));
+    await expect(new MsxClient({ getAccessToken: async () => "test-only" }).listTerritories())
+      .rejects.toThrow("repeated pagination link");
+  });
 });

@@ -3,6 +3,7 @@ import type { AppSettings, PortfolioAccount } from "../../../shared/types";
 import { ScopeEditor } from "./ScopeEditor";
 import { AccountOnboarding } from "./AccountOnboarding";
 import { BrandMark } from "../layout/BrandMark";
+import { TerritoryPicker } from "./TerritoryPicker";
 
 interface FirstRunFlowProps {
   settings: AppSettings;
@@ -10,10 +11,10 @@ interface FirstRunFlowProps {
   onAccountAdded: (account: PortfolioAccount) => void;
 }
 
-type Step = "scope" | "account";
+type Step = "territories" | "scope" | "account";
 
 export function FirstRunFlow({ settings, onScopeSaved, onAccountAdded }: FirstRunFlowProps) {
-  const [step, setStep] = useState<Step>("scope");
+  const [step, setStep] = useState<Step>("territories");
   const [savingScope, setSavingScope] = useState(false);
 
   return (
@@ -21,11 +22,20 @@ export function FirstRunFlow({ settings, onScopeSaved, onAccountAdded }: FirstRu
       <div className="gate-card gate-card-wide">
         <BrandMark />
         <ol className="wizard-steps" aria-label="Setup progress">
-          <li aria-current={step === "scope" ? "step" : undefined}>1. Milestone window</li>
-          <li aria-current={step === "account" ? "step" : undefined}>2. Add a customer</li>
+          <li aria-current={step === "territories" ? "step" : undefined}>1. Sales territories</li>
+          <li aria-current={step === "scope" ? "step" : undefined}>2. Milestone window</li>
+          <li aria-current={step === "account" ? "step" : undefined}>3. Add customers</li>
         </ol>
 
-        {step === "scope" ? (
+        {step === "territories" ? <>
+          <h1>Choose your sales territories</h1>
+          <TerritoryPicker selectedIds={settings.territoryIds}
+            onConfirm={async (ids) => {
+              await onScopeSaved({ ...settings, territoryIds: ids });
+              setStep("scope");
+            }}
+            onManual={() => setStep("scope")} />
+        </> : step === "scope" ? (
           <>
             <h1>Set your milestone window</h1>
             <p>

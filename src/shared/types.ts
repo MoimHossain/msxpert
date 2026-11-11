@@ -33,6 +33,17 @@ export interface AppSettings {
   scope: ScopeSettings;
   retentionSnapshots: number;
   privacyAccepted: boolean;
+  territoryIds: string[];
+  onboardingComplete: boolean;
+}
+
+export interface SalesTerritory {
+  id: string;
+  name: string;
+  accountTeamUnitGroup: string | null;
+  salesUnit: string | null;
+  salesGroup: string | null;
+  fiscalYear: string | null;
 }
 
 export interface AccountSearchResult {
@@ -327,6 +338,7 @@ export interface DesktopApi {
   signOut(): Promise<AuthState>;
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
+  listTerritories(): Promise<SalesTerritory[]>;
   searchAccounts(term: string): Promise<AccountSearchResult[]>;
   previewAccount(accountId: string): Promise<AccountPreview>;
   addAccount(accountId: string): Promise<PortfolioAccount>;

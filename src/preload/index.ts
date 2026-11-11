@@ -30,6 +30,7 @@ const IPC = {
   signOut: "auth:sign-out",
   getSettings: "settings:get",
   updateSettings: "settings:update",
+  listTerritories: "territories:list",
   searchAccounts: "accounts:search",
   previewAccount: "accounts:preview",
   addAccount: "accounts:add",
@@ -80,6 +81,7 @@ const api: DesktopApi = {
   },
   signOut: () => ipcRenderer.invoke(IPC.signOut),
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
+  listTerritories: () => ipcRenderer.invoke(IPC.listTerritories),
   updateSettings: (settings: AppSettings) =>
     ipcRenderer.invoke(IPC.updateSettings, settings),
   searchAccounts: (term: string) =>

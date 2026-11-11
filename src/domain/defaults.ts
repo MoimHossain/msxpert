@@ -56,5 +56,7 @@ export function defaultSettings(now = new Date()): AppSettings {
     },
     retentionSnapshots: 60,
     privacyAccepted: false,
+    territoryIds: [],
+    onboardingComplete: false,
   };
 }

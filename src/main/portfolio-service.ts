@@ -99,7 +99,8 @@ export class PortfolioService {
 
   getSettings(): AppSettings {
     const stored = this.store.get<AppSettings>(SETTINGS_KIND, "default");
-    if (stored) return stored;
+    if (stored) return { ...stored, territoryIds: stored.territoryIds ?? [],
+      onboardingComplete: stored.onboardingComplete ?? this.listAccounts().length > 0 };
     const defaults = defaultSettings();
     this.store.put(SETTINGS_KIND, "default", defaults);
     return defaults;

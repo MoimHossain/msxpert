@@ -68,6 +68,7 @@ if (!process.versions.electron) {
     const bootstrap = () => {
       const settings = defaultSettings();
       settings.privacyAccepted = privacyAccepted;
+      settings.onboardingComplete = configured;
       return {
         auth: { signedIn, name: "Demo Manager", username: "demo@example.invalid", userId: null },
         profile: null,
@@ -98,6 +99,7 @@ if (!process.versions.electron) {
       id: "demo", displayName: "Demo Manager", jobTitle: "Demo role", email: "demo@example.invalid",
       department: null, officeLocation: null, photoDataUrl: null, updatedAt: new Date().toISOString(),
     }));
+    ipcMain.handle(IPC.listTerritories, () => []);
     ipcMain.handle(IPC.resetSetup, () => {
       resetCalls++;
       signedIn = false;
@@ -149,6 +151,8 @@ if (!process.versions.electron) {
     signedIn = true;
     phase = "idle";
     await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("document.body.innerText.includes('Choose your sales territories')"));
+    await click("Use manual account lookup");
     await wait(() => js("Boolean(document.querySelector('.scope-editor input'))"));
     assert.equal(await js(`(() => {
       const fields = [...document.querySelectorAll('.scope-editor-grid .fui-Input')].map(e => e.getBoundingClientRect());
@@ -215,6 +219,8 @@ if (!process.versions.electron) {
     await click("Continue");
     await wait(() => js("document.body.innerText.includes('Sign in to MSX')"));
     await click("Sign in with MSX");
+    await wait(() => js("document.body.innerText.includes('Choose your sales territories')"));
+    await click("Use manual account lookup");
     await wait(() => js("document.body.innerText.includes('Set your milestone window')"));
     await click("Continue");
     await wait(() => js("document.body.innerText.includes('Add your first customer')"));

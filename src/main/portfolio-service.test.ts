@@ -80,6 +80,8 @@ describe("data-preserving setup reset", () => {
     expect(store.get("user-profile", "current")).toBeNull();
     expect(store.get("user-profile-photo", "current")).toBeNull();
     expect(state.settings).toEqual(defaultSettings());
+    expect(state.settings.territoryIds).toEqual([]);
+    expect(state.settings.onboardingComplete).toBe(false);
     expect(state.overview.accounts).toEqual([]);
     expect(store.get("archived-portfolio-account", account.id)).toEqual(account);
     expect(store.get(`snapshots:${account.id}`, account.createdAt)).toEqual({ retained: "snapshot" });

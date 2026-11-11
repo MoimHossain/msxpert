@@ -5,11 +5,13 @@ import type {
   GoneReason,
   NormalizedMilestone,
   ScopeSettings,
+  SalesTerritory,
   SystemUserSearchResult,
 } from "../shared/types";
 import type { AuthService } from "./auth";
 import { AuthRequiredError } from "./auth";
 import { loadConnectionConfig } from "./connection-config";
+import { microsoftFiscalYear } from "../domain/defaults";
 
 const connection = loadConnectionConfig();
 const CRM_ORIGIN = connection.resourceUrl.replace(/\/$/, "");
@@ -247,13 +249,43 @@ export class MsxClient {
 
   private async collection<T extends RawRecord>(path: string): Promise<T[]> {
     const records: T[] = [];
+    const visited = new Set<string>();
     let next: string | null = path;
     while (next) {
+      const url = new URL(next, API_ROOT).href;
+      if (visited.has(url)) throw new Error("MSX returned a repeated pagination link. Retry the request.");
+      visited.add(url);
       const page: ODataResponse<T> = await this.request<ODataResponse<T>>(next);
+      if (!Array.isArray(page.value)) throw new Error("MSX returned an invalid collection.");
       records.push(...page.value);
       next = page["@odata.nextLink"] ?? null;
     }
     return records;
+  }
+
+  async listTerritories(now = new Date()): Promise<SalesTerritory[]> {
+    const fiscalYear = microsoftFiscalYear(now).label;
+    const records = await this.collection<RawRecord>(queryPath("territories", {
+      "$select": "territoryid,name,msp_accountteamunitgroupname,msp_salesunitname,msp_salesgroupname",
+      "$orderby": "name asc",
+    }));
+    const territories = new Map<string, SalesTerritory>();
+    for (const record of records) {
+      if (typeof record.territoryid !== "string" || typeof record.name !== "string") {
+        throw new Error("MSX returned an invalid territory record.");
+      }
+      const year = record.name.match(/(?:^|[\s._-])FY(\d{4}|\d{2})(?=$|[\s._-])/i)?.[1];
+      const label = year ? `FY${year.slice(-2)}` : null;
+      if (label && label !== fiscalYear) continue;
+      const territory: SalesTerritory = {
+        id: record.territoryid.toLowerCase(), name: record.name,
+        accountTeamUnitGroup: stringOrNull(record.msp_accountteamunitgroupname),
+        salesUnit: stringOrNull(record.msp_salesunitname),
+        salesGroup: stringOrNull(record.msp_salesgroupname), fiscalYear: label,
+      };
+      territories.set(territory.id, territory);
+    }
+    return [...territories.values()];
   }
 
   async getMyUserId(): Promise<string> {

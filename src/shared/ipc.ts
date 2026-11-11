@@ -18,6 +18,7 @@ export const IPC = {
   signOut: "auth:sign-out",
   getSettings: "settings:get",
   updateSettings: "settings:update",
+  listTerritories: "territories:list",
   searchAccounts: "accounts:search",
   previewAccount: "accounts:preview",
   addAccount: "accounts:add",
