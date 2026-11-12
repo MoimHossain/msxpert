@@ -24,6 +24,8 @@ const settingsSchema = z.object({
   privacyAccepted: z.boolean(),
   territoryIds: z.array(z.guid()).max(1000),
   onboardingComplete: z.boolean(),
+  teamEnabled: z.boolean(),
+  podsEnabled: z.boolean(),
 });
 
 const userSchema = z.object({

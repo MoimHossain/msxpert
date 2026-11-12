@@ -35,6 +35,8 @@ export interface AppSettings {
   privacyAccepted: boolean;
   territoryIds: string[];
   onboardingComplete: boolean;
+  teamEnabled: boolean;
+  podsEnabled: boolean;
 }
 
 export interface SalesTerritory {

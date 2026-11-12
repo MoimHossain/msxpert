@@ -1,4 +1,5 @@
-import { AppDataProvider, useAppData } from "./state/AppDataProvider";
+import { useEffect } from "react";
+import { AppDataProvider, useAppData, useLoadedAppData } from "./state/AppDataProvider";
 import { NavigationProvider, useNavigation } from "./state/NavigationProvider";
 import { ToastProvider } from "./state/ToastProvider";
 import { ThemeProvider } from "./state/ThemeProvider";
@@ -34,7 +35,14 @@ function StartupUpdates() {
 }
 
 function RouteOutlet() {
-  const { route } = useNavigation();
+  const { route, navigate } = useNavigation();
+  const { settings } = useLoadedAppData();
+  const disabled = (route.name === "team" && !settings.teamEnabled) ||
+    (route.name === "pods" && !settings.podsEnabled);
+  useEffect(() => {
+    if (disabled) navigate({ name: "settings" });
+  }, [disabled, navigate]);
+  if (disabled) return null;
   switch (route.name) {
     case "portfolio":
       return <PortfolioView />;

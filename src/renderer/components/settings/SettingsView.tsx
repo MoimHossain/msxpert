@@ -14,7 +14,7 @@ import { Avatar } from "@fluentui/react-components";
 import { ErrorBanner } from "../ui/ErrorBanner";
 import { AiConnectionsPanel } from "./AiConnectionsPanel";
 import { useTheme } from "../../state/ThemeProvider";
-import { Radio, RadioGroup } from "@fluentui/react-components";
+import { Checkbox, Radio, RadioGroup } from "@fluentui/react-components";
 
 export function SettingsView() {
   const { auth, profile, settings, dataPath, version, overview } = useLoadedAppData();
@@ -28,11 +28,25 @@ export function SettingsView() {
   const [savingScope, setSavingScope] = useState(false);
   const [retention, setRetention] = useState(settings.retentionSnapshots);
   const [savingRetention, setSavingRetention] = useState(false);
+  const [savingFeatures, setSavingFeatures] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   useUpdateBlocker(retention !== settings.retentionSnapshots);
   useUpdateBlocker(resetOpen || resetting);
   useUpdateBlocker(refreshingProfile);
+  useUpdateBlocker(savingFeatures);
+
+  const saveFeature = async (feature: "teamEnabled" | "podsEnabled", enabled: boolean) => {
+    setSavingFeatures(true);
+    try {
+      await saveSettings({ ...settings, [feature]: enabled });
+      notify(`${feature === "teamEnabled" ? "Team" : "PODs"} ${enabled ? "enabled." : "hidden. Saved records are kept."}`, "positive");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), "critical");
+    } finally {
+      setSavingFeatures(false);
+    }
+  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -139,14 +153,26 @@ export function SettingsView() {
         />
       </section>
 
-      <section className="settings-section">
-        <h2>Team and PODs</h2>
-        <p>Manage roster members and PODs from their own pages.</p>
-        <div className="settings-actions">
-          <Button variant="secondary" onClick={() => navigate({ name: "team" })}>
+      <section className="settings-section workspace-features" aria-labelledby="workspace-features-heading" aria-busy={savingFeatures}>
+        <h2 id="workspace-features-heading">Team and PODs</h2>
+        <p>Choose which features appear in your workspace. Turning a feature off hides its page without deleting saved records.</p>
+        <div className="workspace-feature">
+          <div>
+            <Checkbox label="Enable Team" checked={settings.teamEnabled} disabled={savingFeatures}
+              onChange={(_event, data) => void saveFeature("teamEnabled", Boolean(data.checked))} />
+            <p className="field-hint">Manage your roster as a team manager. Off by default.</p>
+          </div>
+          <Button variant="secondary" disabled={!settings.teamEnabled || savingFeatures} onClick={() => navigate({ name: "team" })}>
             Go to Team
           </Button>
-          <Button variant="secondary" onClick={() => navigate({ name: "pods" })}>
+        </div>
+        <div className="workspace-feature">
+          <div>
+            <Checkbox label="Enable PODs" checked={settings.podsEnabled} disabled={savingFeatures}
+              onChange={(_event, data) => void saveFeature("podsEnabled", Boolean(data.checked))} />
+            <p className="field-hint">Organize people and accounts into PODs. On by default.</p>
+          </div>
+          <Button variant="secondary" disabled={!settings.podsEnabled || savingFeatures} onClick={() => navigate({ name: "pods" })}>
             Go to PODs
           </Button>
         </div>

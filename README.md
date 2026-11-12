@@ -8,6 +8,8 @@ The workspace uses Microsoft **Fluent UI React v9** components, Fluent icons, an
 
 Fluent packages are build-time dependencies: Vite bundles the required renderer code/icons into the app, avoiding shipping the entire component/icon source trees in the Electron runtime.
 
+**Settings > Team and PODs** controls optional workspace pages: Team is off by default and PODs is on. These device-local choices persist across restarts, including when upgrading an existing installation. Hiding a page keeps its saved roster/POD records. Use **Minimize sidebar** to switch to an icon-only rail and **Expand sidebar** to restore labels; this layout preference is remembered alongside the theme.
+
 **Settings > Reset setup** signs out, clears the profile/photo/token cache and territory selection, archives tracked customer registrations, and restores default setup preferences/privacy consent. Confirmation requires typing `RESET`. The same privacy, MSX sign-in, sales-territory, milestone-window, and import flow runs again. Customer data/history, encrypted database/key, team, and POD records are retained; re-adding a customer reconnects its previous identity and history. Reset refuses to run while application operations or an update restart are active.
 
 ### Connection and sign-in
@@ -117,7 +119,7 @@ Installed signed builds offer **Settings > Updates > Check for updates**, follow
 
 For release infrastructure, publishing gates, and recovery instructions, see [Signing and releasing](prds/SIGNING.md). Existing installations without the updater need one manual upgrade to an updater-enabled release.
 
-After building, run `npm run test:updates:smoke` to exercise the actual Electron preload/renderer update UI with mocked release responses. A real signed N-to-N+1 installation test is still required before publishing.
+After building, run `npm run test:updates:smoke` to exercise the actual Electron preload/renderer update UI with mocked release responses, workspace switches, and collapsed navigation. Set `MCAPS_UI_SMOKE_APP` to an unpacked build's `resources\app.asar` to check its packaged assets using synthetic fixtures. A real signed N-to-N+1 installation test is still required before publishing.
 
 **Opt-in live AI validation:** after building, `npm run test:ai:live` exercises
 both Settings test buttons with actual providers, a fresh isolated app vault,

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountPreview, PortfolioAccount, Pod, TeamPerson } from "../shared/types";
+import type { AccountPreview, AppSettings, PortfolioAccount, Pod, TeamPerson } from "../shared/types";
 import { defaultSettings } from "../domain/defaults";
 import { AuthService } from "./auth";
 import { MsxClient } from "./msx-client";
@@ -55,6 +55,7 @@ describe("data-preserving setup reset", () => {
     vi.spyOn(auth, "getAccountKey").mockResolvedValue(null);
     service = new PortfolioService(store, auth, msx, "0.5.0-alpha.1");
     store.put("settings", "default", { ...defaultSettings(), privacyAccepted: true, retentionSnapshots: 7,
+      teamEnabled: true, podsEnabled: false,
       territoryIds: ["00000000-0000-0000-0000-000000000001"], onboardingComplete: true });
     store.put("portfolio-account", account.id, account);
     store.put(`current:${account.id}`, "milestones", []);
@@ -71,6 +72,36 @@ describe("data-preserving setup reset", () => {
     store.close();
     rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     vi.restoreAllMocks();
+  });
+
+  it.each(["fresh", "legacy"])("uses Team off and PODs on for %s settings", async (kind) => {
+    if (kind === "fresh") {
+      store.delete("settings", "default");
+    } else {
+      const legacy: Partial<AppSettings> = service.getSettings();
+      delete legacy.teamEnabled;
+      delete legacy.podsEnabled;
+      store.put("settings", "default", legacy);
+    }
+    const state = await service.bootstrap(directory);
+    expect(state.settings).toMatchObject({ teamEnabled: false, podsEnabled: true });
+    if (kind === "legacy") {
+      expect(state.settings).toMatchObject({ privacyAccepted: true, retentionSnapshots: 7, onboardingComplete: true });
+    }
+  });
+
+  it("persists feature switches across reopening the vault without changing team or POD records", () => {
+    const settings = { ...service.getSettings(), teamEnabled: false, podsEnabled: false };
+    service.updateSettings(settings);
+    store.close();
+    store = new VaultStore(directory);
+    service = new PortfolioService(store, auth, msx, "0.5.0-alpha.2");
+    expect(service.getSettings()).toEqual(settings);
+    expect(store.get("team-person", person.id)).toEqual(person);
+    expect(store.get("pod", pod.id)).toEqual(pod);
+    service.updateSettings({ ...settings, teamEnabled: true, podsEnabled: true });
+    expect(service.listTeam()).toEqual([person]);
+    expect(store.get("pod", pod.id)).toEqual(pod);
   });
 
   it("archives active customers, resets first-run preferences, and keeps history, team, and POD records", async () => {

@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
-import { Sidebar } from "./Sidebar";
+import { useState, type ReactNode } from "react";
+import { Sidebar, type NavEntry } from "./Sidebar";
 import { ToastViewport } from "../ui/ToastViewport";
 import { useUpdates } from "../../state/UpdateProvider";
 import { APP_NAME } from "../../../shared/branding";
 import { ShieldCheckmark20Regular } from "@fluentui/react-icons";
 import type { UserProfile } from "../../../shared/types";
+import { useLoadedAppData } from "../../state/AppDataProvider";
+import { useToast } from "../../state/ToastProvider";
 
 interface AppShellProps {
   identityName: string | null;
@@ -16,19 +18,34 @@ interface AppShellProps {
 
 export function AppShell({ identityName, identityUsername, profile, changesBadge, children }: AppShellProps) {
   const { state: updates } = useUpdates();
+  const { settings } = useLoadedAppData();
+  const { notify } = useToast();
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("csu-console-sidebar-collapsed") === "true");
+  const entries: NavEntry[] = [
+    { id: "portfolio", label: "Portfolio" },
+    { id: "changes", label: "All Changes", badge: changesBadge },
+    { id: "team", label: "Team" },
+    { id: "pods", label: "PODs" },
+    { id: "settings", label: "Settings" },
+  ];
+  const toggleSidebar = () => {
+    try {
+      localStorage.setItem("csu-console-sidebar-collapsed", String(!collapsed));
+      setCollapsed(!collapsed);
+    } catch {
+      notify("Could not save your sidebar preference. Try again.", "critical");
+    }
+  };
   return (
-    <div className="app-shell">
+    <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <Sidebar
+        collapsed={collapsed}
+        onToggleCollapsed={toggleSidebar}
         identityName={identityName}
         identityUsername={identityUsername}
         profile={profile}
-        entries={[
-          { id: "portfolio", label: "Portfolio" },
-          { id: "changes", label: "All Changes", badge: changesBadge },
-          { id: "team", label: "Team" },
-          { id: "pods", label: "PODs" },
-          { id: "settings", label: "Settings" },
-        ]}
+        entries={entries.filter(entry => (entry.id !== "team" || settings.teamEnabled) &&
+          (entry.id !== "pods" || settings.podsEnabled))}
       />
       <div className="app-main">
         <div className="app-topbar">

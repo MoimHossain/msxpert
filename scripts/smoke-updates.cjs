@@ -21,7 +21,7 @@ if (!process.versions.electron) {
   const { app, BrowserWindow, ipcMain } = require("electron");
   if (process.env.MCAPS_SMOKE_SCREENSHOT) app.disableHardwareAcceleration();
   app.setPath("userData", process.env.CSU_SMOKE_DATA);
-  const root = join(__dirname, "..");
+  const root = process.env.MCAPS_UI_SMOKE_APP || join(__dirname, "..");
   const { defaultSettings } = require(join(root, "dist-main", "domain", "defaults.js"));
   const { IPC } = require(join(root, "dist-main", "shared", "ipc.js"));
   let window;
@@ -36,6 +36,8 @@ if (!process.versions.electron) {
   let imports = 0;
   let profileRefreshes = 0;
   let territoryRefreshes = 0;
+  let savedSettings = defaultSettings();
+  let failSettings = false;
   const demoTerritory = {
     id: "00000000-0000-0000-0000-000000000001", name: "Demo territory",
     accountTeamUnitGroup: "Demo group", salesUnit: "Demo unit", salesGroup: "Demo sales group", fiscalYear: null,
@@ -99,6 +101,106 @@ if (!process.versions.electron) {
     })()`);
     assert.ok(clicked, `Enabled button: ${label}`);
   };
+  const clickAria = async (label) => {
+    assert.equal(await js(`(() => {
+      const button = [...document.querySelectorAll('.sidebar button')]
+        .find(button => button.getAttribute('aria-label') === ${JSON.stringify(label)});
+      if (!button || button.disabled) return false;
+      button.click(); return true;
+    })()`), true, `Accessible sidebar button: ${label}`);
+  };
+  const checkWorkspaceFeatures = async () => {
+    const visible = (name) => js(`Boolean(document.querySelector('.sidebar button[aria-label="${name}"]'))`);
+    const feature = (index, property) => js(`document.querySelectorAll('.workspace-features input')[${index}].${property}`);
+    const toggle = async (index) => js(`document.querySelectorAll('.workspace-features input')[${index}].click()`);
+    assert.equal(await visible("Team"), false, "Team is hidden by default");
+    assert.equal(await visible("PODs"), true, "PODs is visible by default");
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.workspace-features input'))"));
+    assert.equal(await feature(0, "checked"), false);
+    assert.equal(await feature(1, "checked"), true);
+    assert.equal(await js(`[...document.querySelectorAll('.workspace-features button')].find(b => b.textContent === 'Go to Team').disabled`), true);
+    await toggle(0);
+    await wait(() => visible("Team"));
+    await click("Go to Team");
+    await wait(() => js("document.querySelector('h1')?.textContent === 'Team'"));
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.workspace-features input'))"));
+    await toggle(1);
+    await wait(async () => !await visible("PODs"));
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    assert.equal(await visible("Team"), true, "Team opt-in survives reload");
+    assert.equal(await visible("PODs"), false, "Explicit PODs opt-out survives reload");
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.workspace-features input'))"));
+    assert.equal(await feature(0, "checked"), true);
+    assert.equal(await feature(1, "checked"), false);
+    assert.equal(await js(`[...document.querySelectorAll('.workspace-features button')].find(b => b.textContent === 'Go to PODs').disabled`), true);
+    failSettings = true;
+    try {
+      await toggle(0);
+      await wait(() => js("document.body.innerText.includes('Synthetic settings save failed.')"));
+      assert.equal(await visible("Team"), true, "A failed save does not hide Team");
+      assert.equal(await feature(0, "checked"), true, "Failed checkbox save retains its persisted value");
+    } finally { failSettings = false; }
+    await wait(async () => !await feature(0, "disabled"));
+    await toggle(0);
+    await wait(async () => !await visible("Team"));
+    assert.equal(await visible("PODs"), false, "Both optional pages can be hidden");
+    await toggle(0);
+    await wait(() => visible("Team"));
+    await toggle(1);
+    await wait(() => visible("PODs"));
+    console.log("Feature switches passed: defaults, immediate menu visibility, page links, persistence and failed-save feedback.");
+  };
+  const checkCollapsedSidebar = async () => {
+    const original = window.getContentSize();
+    const expandedWidth = await js("document.querySelector('.app-main').getBoundingClientRect().width");
+    await clickAria("Minimize sidebar");
+    await wait(() => js("Boolean(document.querySelector('.sidebar-collapsed'))"));
+    assert.ok(await js("document.querySelector('.app-main').getBoundingClientRect().width") > expandedWidth,
+      "Collapsing the sidebar gives the page more usable width");
+    assert.equal(await js("localStorage.getItem('csu-console-sidebar-collapsed')"), "true");
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(() => {
+          const sidebar = document.querySelector('.sidebar').getBoundingClientRect();
+          const page = document.querySelector('.app-content');
+          return sidebar.width === 80 && [...document.querySelectorAll('.sidebar button')].every(button => {
+            const rect = button.getBoundingClientRect();
+            return rect.width >= 40 && rect.height >= 40 && rect.left >= sidebar.left && rect.right <= sidebar.right &&
+              Boolean(button.getAttribute('aria-label'));
+          }) && document.scrollingElement.scrollWidth <= innerWidth && page.scrollWidth <= page.clientWidth;
+        })()`), true, `Collapsed rail has accessible, contained click targets and no page overflow at ${width}px`);
+      }
+    } finally {
+      window.setContentSize(...original);
+      await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
+    }
+    for (const label of ["Team", "PODs", "Settings"]) {
+      await clickAria(label);
+      await wait(() => js(`document.querySelector('h1')?.textContent === ${JSON.stringify(label)}`));
+      assert.equal(await js(`document.querySelector('.sidebar button[aria-label="${label}"]').getAttribute('aria-current')`), "page");
+    }
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.sidebar-collapsed'))"));
+    assert.equal(await js("document.querySelector('.sidebar-collapse').getAttribute('aria-expanded')"), "false");
+    await clickAria("Settings");
+    await wait(() => js("Boolean(document.querySelector('.appearance-settings input'))"));
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-sidebar.png`));
+    }
+    await clickAria("Expand sidebar");
+    await wait(() => js("document.querySelector('.sidebar-collapsed') === null"));
+    assert.equal(await js("localStorage.getItem('csu-console-sidebar-collapsed')"), "false");
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+  };
   const checkSettingsLayout = async () => {
     await click("Settings");
     await wait(() => js("Boolean(document.querySelector('.appearance-settings input'))"));
@@ -119,6 +221,10 @@ if (!process.versions.electron) {
             const range = document.createRange();
             range.selectNodeContents(value);
             return [...range.getClientRects()].every(rect => rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1);
+          }) && [...document.querySelectorAll('.workspace-feature')].every(feature => {
+            const copy = feature.querySelector('div').getBoundingClientRect();
+            const button = feature.querySelector('button').getBoundingClientRect();
+            return button.left >= copy.right - 1 || button.top >= copy.bottom - 1;
           }) && document.querySelector('.app-content').scrollWidth <= document.querySelector('.app-content').clientWidth;
         })()`), true, `Settings cards fill the page and long update/data values do not overlap at ${width}px`);
       }
@@ -149,6 +255,9 @@ if (!process.versions.electron) {
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
       const theme = await js("document.documentElement.dataset.theme");
       await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-settings.png`));
+      await js("document.querySelector('.workspace-features').scrollIntoView({ block: 'center' })");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-features.png`));
+      await js("document.querySelector('.app-content').scrollTop = 0");
     }
     await click("Portfolio");
     await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
@@ -370,7 +479,7 @@ if (!process.versions.electron) {
     ipcMain.handle(IPC.workiqTest, (_event, config) => aiService.testWorkiq(config));
     ipcMain.handle(IPC.aiCancel, () => aiService.cancel());
     const bootstrap = () => {
-      const settings = defaultSettings();
+      const settings = { ...savedSettings };
       settings.privacyAccepted = privacyAccepted;
       settings.onboardingComplete = configured;
       return {
@@ -388,6 +497,8 @@ if (!process.versions.electron) {
     };
     ipcMain.handle(IPC.bootstrap, bootstrap);
     ipcMain.handle(IPC.updateSettings, (_event, settings) => {
+      if (failSettings) throw new Error("Synthetic settings save failed.");
+      savedSettings = settings;
       privacyAccepted = settings.privacyAccepted;
       return settings;
     });
@@ -450,6 +561,7 @@ if (!process.versions.electron) {
       signedIn = false;
       configured = false;
       privacyAccepted = false;
+      savedSettings = defaultSettings();
       return bootstrap();
     });
     ipcMain.handle(IPC.updateState, snapshot);
@@ -550,7 +662,9 @@ if (!process.versions.electron) {
     assert.equal(await js("document.querySelectorAll('.metric-drilldown tbody tr').length"), 1,
       "Grouped freshness metric preserves its account filtering");
     await click("Close");
+    await checkWorkspaceFeatures();
     window.webContents.debugger.attach("1.3");
+    await checkCollapsedSidebar();
     await checkSettingsLayout();
     const theme = await js("document.documentElement.dataset.theme");
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
@@ -565,6 +679,7 @@ if (!process.versions.electron) {
     await checkPortfolioCards();
     await checkOwnerScrolling();
     await checkAllChangesSpacing();
+    await checkCollapsedSidebar();
     await checkSettingsLayout();
     window.webContents.debugger.detach();
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
@@ -615,8 +730,10 @@ if (!process.versions.electron) {
     await click("Open workspace");
     await wait(() => js("Boolean(document.querySelector('.app-shell'))"));
     assert.equal(await js("document.querySelector('.sidebar-profile').innerText.includes('Demo role')"), true);
+    assert.equal(await js("document.querySelector('.sidebar button[aria-label=\"Team\"]') === null"), true, "Reset restores Team off");
+    assert.equal(await js("Boolean(document.querySelector('.sidebar button[aria-label=\"PODs\"]'))"), true, "Reset restores PODs on");
     assert.equal(territoryRefreshes, 1, "Legacy territory metadata is loaded once and reused across workspace navigation");
-    console.log("MCAPS UI smoke passed: AI/Work IQ test results, dependency gate, failed retest and cancellation, Settings-only theme controls, full-width cards and non-overlapping details at three widths in both themes; existing portfolio, changes, scrolling, onboarding, reset and updates.");
+    console.log("MCAPS UI smoke passed: persistent Team/POD feature switches, collapsible accessible navigation at three widths in both themes; existing AI/Work IQ, Settings layout, portfolio, changes, scrolling, onboarding, reset and updates.");
     window.destroy();
     app.exit(0);
   }).catch((error) => {

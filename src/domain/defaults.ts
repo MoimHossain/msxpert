@@ -58,5 +58,7 @@ export function defaultSettings(now = new Date()): AppSettings {
     privacyAccepted: false,
     territoryIds: [],
     onboardingComplete: false,
+    teamEnabled: false,
+    podsEnabled: true,
   };
 }
