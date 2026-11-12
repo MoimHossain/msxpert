@@ -11,6 +11,7 @@ export type AccountTab = "dashboard" | "milestones" | "changes" | "history";
 
 export type Route =
   | { name: "portfolio" }
+  | { name: "milestones" }
   | { name: "changes" }
   | { name: "team" }
   | { name: "pods" }

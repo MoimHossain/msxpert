@@ -24,6 +24,7 @@ if (!process.versions.electron) {
   const root = process.env.MCAPS_UI_SMOKE_APP || join(__dirname, "..");
   const { defaultSettings } = require(join(root, "dist-main", "domain", "defaults.js"));
   const { IPC } = require(join(root, "dist-main", "shared", "ipc.js"));
+  const { MSX_ORIGIN } = require(join(root, "dist-main", "main", "msx-client.js"));
   let window;
   let signedIn = false;
   let configured = false;
@@ -38,6 +39,30 @@ if (!process.versions.electron) {
   let territoryRefreshes = 0;
   let savedSettings = defaultSettings();
   let failSettings = false;
+  let milestoneStore;
+  let exportedMilestones = [];
+  let revealedMilestones = [];
+  let milestoneReadFailure = false;
+  const openedMilestoneLinks = [];
+  const copiedMilestoneLinks = [];
+  let failMilestoneCopy = false;
+  const demoMilestones = (account) => Array.from({ length: 60 }, (_, index) => ({
+    id: `milestone-${account.id}-${index}`, name: `Demo migration ${String(index).padStart(2, "0")} with a long milestone name to resize${index === 0 ? " and additional migration details".repeat(12) : ""}`,
+    number: `DEMO-${index}`, date: index < 30 ? "2027-01-15" : "2027-02-15",
+    status: index < 40 ? "On Track" : index < 50 ? "At Risk" : "Blocked", statusValue: 861980000,
+    statusReason: null, commitment: "Committed", category: null,
+    workload: index === 0 ? "Azure services and migration workload details ".repeat(10) : "Azure", milestoneWorkload: "Azure",
+    solutionArea: "Infrastructure", helpNeeded: null, azureRegion: index % 2 ? "North Europe" : null, azureCapacityType: null,
+    monthlyUse: index - 20, monthlyUseFormatted: String(index - 20), nonRecurringMonths: null,
+    forecastComments: index % 2 ? "Needs timeline review" : null, forecastCommentsModifiedOn: null, milestoneComments: null,
+    ownerId: index % 2 ? "sam" : "demo-owner", ownerName: index % 2 ? "Sam" : "Demo Owner with a long display name for responsive controls",
+    accountId: `child-${account.id}`, accountName: "Actual subsidiary with a long account name ".repeat(8), opportunityId: null, opportunityName: "Demo opportunity",
+    opportunityUrl: index === 1 ? null : `${MSX_ORIGIN}/main.aspx?etn=opportunity&id=opportunity-${account.id}-${index}`,
+    createdOn: null, createdById: index === 2 ? null : index % 2 ? "creator-two" : "creator-one",
+    createdByName: index === 2 ? null : index % 2 ? "Taylor Creator" : "Jordan Creator",
+    modifiedOn: null, modifiedByName: null, versionNumber: "1",
+    url: index === 2 ? "" : `${MSX_ORIGIN}/main.aspx?etn=msp_engagementmilestone&id=milestone-${account.id}-${index}`,
+  }));
   const demoTerritory = {
     id: "00000000-0000-0000-0000-000000000001", name: "Demo territory",
     accountTeamUnitGroup: "Demo group", salesUnit: "Demo unit", salesGroup: "Demo sales group", fiscalYear: null,
@@ -181,7 +206,7 @@ if (!process.versions.electron) {
       window.setContentSize(...original);
       await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
     }
-    for (const label of ["Team", "PODs", "Settings"]) {
+    for (const label of ["Milestones", "Team", "PODs", "Settings"]) {
       await clickAria(label);
       await wait(() => js(`document.querySelector('h1')?.textContent === ${JSON.stringify(label)}`));
       assert.equal(await js(`document.querySelector('.sidebar button[aria-label="${label}"]').getAttribute('aria-current')`), "page");
@@ -200,6 +225,311 @@ if (!process.versions.electron) {
     assert.equal(await js("localStorage.getItem('csu-console-sidebar-collapsed')"), "false");
     await click("Portfolio");
     await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+  };
+  const setMilestoneField = async (label, value) => {
+    assert.ok(await js(`(() => {
+      const field = [...document.querySelectorAll('.milestone-table-wrap .field')]
+        .find(field => field.querySelector('label')?.textContent.trim() === ${JSON.stringify(label)});
+      const control = field?.querySelector('input,select');
+      if (!control) return false;
+      const prototype = control.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(control, ${JSON.stringify(value)});
+      control.dispatchEvent(new Event(control.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+      return true;
+    })()`), `Milestone control: ${label}`);
+  };
+  const checkMilestoneWorkspace = async () => {
+    await clickAria("Milestones");
+    await wait(() => js("document.querySelectorAll('.milestones-page [data-milestone-id]').length === 50"));
+    assert.equal(await js(`(() => {
+      const summary = document.querySelector('[data-milestone-id] .milestone-name-summary');
+      const [name, account, workload] = summary.children;
+      const bounded = (element, lines) => element.clientHeight <= parseFloat(getComputedStyle(element).lineHeight) * lines + 1 &&
+        element.scrollHeight > element.clientHeight && element.title.includes(element.textContent.trim());
+      return bounded(name, 2) && bounded(account, 1) && bounded(workload, 1) &&
+        account.textContent.trim().startsWith('Actual subsidiary') &&
+        workload.textContent.trim().startsWith('Azure services') &&
+        getComputedStyle(account).fontWeight === '600' &&
+        getComputedStyle(workload).fontStyle === 'italic' &&
+        getComputedStyle(account).color !== getComputedStyle(workload).color;
+    })()`), true, "Long names and account/workload sublines clamp at their line limits with full-value tooltips");
+    const firstLinks = await js(`(() => {
+      const row = document.querySelector('[data-milestone-id]');
+      const links = [...row.querySelectorAll('.milestone-row-actions a')];
+      return { labels: links.map(link => link.textContent), urls: links.map(link => link.href),
+        header: document.querySelector('.milestone-grid th:last-child').textContent };
+    })()`);
+    assert.deepEqual(firstLinks.labels, ["Milestone", "Opportunity"]);
+    assert.equal(firstLinks.header, "Links & details");
+    const openedBefore = openedMilestoneLinks.length;
+    await js(`document.querySelector('[data-milestone-id] .milestone-row-actions a').click()`);
+    await wait(() => openedMilestoneLinks.length === openedBefore + 1);
+    await js(`document.querySelectorAll('[data-milestone-id] .milestone-row-actions a')[1].click()`);
+    await wait(() => openedMilestoneLinks.length === openedBefore + 2);
+    assert.deepEqual(openedMilestoneLinks.slice(openedBefore), firstLinks.urls);
+    const waitCopyMenu = async () => {
+      await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      await wait(() => js(`(() => {
+        const item = [...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent === 'Copy to clipboard');
+        const surface = item?.closest('.fui-MenuPopover');
+        if (!surface) return false;
+        const rect = item.getBoundingClientRect();
+        const style = getComputedStyle(surface);
+        const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        for (let ancestor = item; ancestor; ancestor = ancestor.parentElement) {
+          const ancestorStyle = getComputedStyle(ancestor);
+          if (Number(ancestorStyle.opacity) < 0.99 || ancestorStyle.visibility !== 'visible' ||
+            ancestorStyle.display === 'none' || ancestor.getAnimations().some(animation => animation.playState === 'running' || animation.playState === 'pending')) return false;
+        }
+        return rect.width > 0 && rect.height > 0 && rect.x >= 0 && rect.y >= 0 &&
+          rect.right <= innerWidth && rect.bottom <= innerHeight && item.contains(target) &&
+          style.visibility === 'visible' && Number(style.opacity) >= 0.99 &&
+          surface.getAnimations({subtree:true}).every(animation => animation.playState !== 'running' && animation.playState !== 'pending');
+      })()`));
+    };
+    const openCopyMenu = async index => {
+      const point = await js(`(() => {
+        const link = document.querySelectorAll('[data-milestone-id] .milestone-row-actions a')[${index}];
+        link.scrollIntoView({block:'center', inline:'center'});
+        const rect = link.getBoundingClientRect();
+        return {x: rect.x + rect.width / 2, y: rect.y + rect.height / 2};
+      })()`);
+      await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "right", buttons: 2, clickCount: 1 });
+      await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "right", buttons: 0, clickCount: 1 });
+      await waitCopyMenu();
+    };
+    const selectCopy = async () => {
+      await js(`[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent === 'Copy to clipboard').click()`);
+      await wait(() => js("document.querySelectorAll('[role=menuitem]').length === 0"));
+    };
+    const copiedBefore = copiedMilestoneLinks.length;
+    await openCopyMenu(0);
+    await selectCopy();
+    await wait(() => copiedMilestoneLinks.length === copiedBefore + 1);
+    assert.equal(copiedMilestoneLinks.at(-1), firstLinks.urls[0]);
+    await wait(() => js("[...document.querySelectorAll('.toast-positive')].some(toast => toast.textContent.includes('Milestone link copied.'))"));
+    await openCopyMenu(1);
+    await selectCopy();
+    await wait(() => copiedMilestoneLinks.length === copiedBefore + 2);
+    assert.equal(copiedMilestoneLinks.at(-1), firstLinks.urls[1], "Opportunity context menu copies the opportunity URL, not the milestone URL");
+    await js(`[...document.querySelectorAll('[aria-label="Dismiss notification"]')].forEach(button => button.click())`);
+    await js("document.querySelector('[data-milestone-id] .milestone-row-actions a').focus()");
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "F10", modifiers: ["shift"] });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "F10", modifiers: ["shift"] });
+    await waitCopyMenu();
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-link-menu.png`));
+    }
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
+    await wait(() => js("document.querySelectorAll('[role=menuitem]').length === 0"));
+    assert.equal(copiedMilestoneLinks.length, copiedBefore + 2, "Dismissing a context menu does not change the clipboard");
+    failMilestoneCopy = true;
+    await openCopyMenu(0);
+    await selectCopy();
+    await wait(() => js("document.body.innerText.includes('Synthetic clipboard failure.')"));
+    failMilestoneCopy = false;
+    assert.equal(await js(`(() => {
+      const row = [...document.querySelectorAll('[data-milestone-id]')].find(row => row.dataset.milestoneId.endsWith('-2'));
+      return row.querySelector('.milestone-row-actions').textContent.includes('No milestone link') &&
+        !row.querySelector('.milestone-row-actions a[href*="engagementmilestone"]');
+    })()`), true, "Missing milestone links cannot be opened or copied");
+    assert.equal(await js(`(() => {
+      const controls = document.querySelector('.milestone-grid-toolbar');
+      const select = controls.querySelector('select').getBoundingClientRect();
+      return [...controls.querySelectorAll('button')].every(button => Math.abs(button.getBoundingClientRect().bottom - select.bottom) <= 1);
+    })()`), true, "Toolbar buttons align with the Freeze column dropdown rather than its label");
+    assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar-list button')].slice(0,3).map(button => button.getAttribute('aria-label').split(',')[0])`),
+      ["Portfolio", "Milestones", "All Changes"]);
+    assert.equal(await js(`(() => {
+      const columns = [...document.querySelectorAll('.milestone-grid th')].map(header => header.dataset.column);
+      return columns.indexOf('createdByName') === columns.indexOf('ownerName') + 1 &&
+        document.querySelector('[data-milestone-id] td[data-column=createdByName]').textContent === 'Jordan Creator';
+    })()`), true, "Raised By appears after Owner and displays the actual creator");
+    await setMilestoneField("Search milestones", "Jordan Creator");
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 87 of 180')"));
+    await click("Clear filters");
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.milestone-facet')].find(field => field.querySelector('label').textContent === 'Raised By');
+      const input = field.querySelector('input');
+      input.focus(); input.click();
+    })()`);
+    await wait(() => js("Boolean(document.querySelector('[role=menuitemcheckbox]'))"));
+    await js(`[...document.querySelectorAll('[role=menuitemcheckbox]')].find(option => option.textContent.startsWith('Jordan Creator (')).click()`);
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 87 of 180')"));
+    await setMilestoneField("Group by", "creator");
+    await setMilestoneField("Order by", "createdByName");
+    await wait(() => js("document.querySelector('.milestone-group-row')?.textContent.includes('Jordan Creator')"));
+    const beforeCreatorExport = exportedMilestones.length;
+    await click("Export Excel");
+    await wait(() => exportedMilestones.length === beforeCreatorExport + 1);
+    assert.equal(exportedMilestones.at(-1).rowCount, 87, "Creator-filtered export uses the same identities as the grid");
+    await click("Clear filters");
+    await setMilestoneField("Group by", "");
+    await setMilestoneField("Search milestones", "TIMELINE");
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 90 of 180')"));
+    await setMilestoneField("Group by", "owner");
+    await setMilestoneField("Then group by 2", "month");
+    await setMilestoneField("Order by", "monthlyUse");
+    await setMilestoneField("Sort direction", "desc");
+    await wait(() => js("document.querySelectorAll('.milestone-group-row').length >= 2"));
+    await click("Collapse all");
+    await wait(() => js("document.querySelectorAll('[data-milestone-id]').length === 0"));
+    const before = exportedMilestones.length;
+    await click("Export Excel");
+    await wait(() => exportedMilestones.length === before + 1);
+    assert.equal(exportedMilestones.at(-1).rowCount, 90, "Export includes every page and every collapsed group");
+    assert.equal(revealedMilestones.at(-1), exportedMilestones.at(-1).path, "Completed export requests reveal of the downloaded workbook");
+    await wait(() => js("document.querySelector('.milestone-export-result')?.textContent.includes('Saved 90')"));
+    const ExcelJS = require(join(root, "node_modules", "exceljs"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(exportedMilestones.at(-1).path);
+    assert.equal(workbook.getWorksheet("Milestones").rowCount, 91);
+    const exportSheet = workbook.getWorksheet("Milestones");
+    const creatorColumn = exportSheet.getRow(1).values.indexOf("Raised By");
+    const creatorIdColumn = exportSheet.getRow(1).values.indexOf("Raised By (MSX user ID)");
+    assert.ok(creatorColumn > 0 && creatorIdColumn > 0, "Workbook includes creator names and source IDs");
+    for (let row = 2; row <= exportSheet.rowCount; row++) {
+      assert.equal(exportSheet.getCell(row, creatorColumn).value, "Taylor Creator");
+      assert.equal(exportSheet.getCell(row, creatorIdColumn).value, "creator-two");
+    }
+    await click("Expand all");
+    await wait(() => js("document.querySelectorAll('[data-milestone-id]').length === 50"));
+    await setMilestoneField("Minimum monthly use", "1e");
+    await wait(() => js("Boolean(document.querySelector('.field-error'))"));
+    assert.equal(await js(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Export Excel').disabled`), true,
+      "Incomplete numeric bounds remain invalid rather than becoming an empty filter");
+    await setMilestoneField("Minimum monthly use", "20");
+    await setMilestoneField("Maximum monthly use", "10");
+    await wait(() => js("document.querySelector('.field-error')?.textContent.includes('Minimum')"));
+    assert.equal(await js(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Export Excel').disabled`), true);
+    await click("Clear filters");
+    await setMilestoneField("Group by", "");
+    await wait(() => js("document.querySelectorAll('[data-milestone-id]').length === 50"));
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.milestone-facet')].find(field => field.querySelector('label').textContent === 'Status');
+      const input = field.querySelector('input');
+      input.focus(); input.click();
+    })()`);
+    await wait(() => js("Boolean(document.querySelector('[role=menuitemcheckbox]'))"));
+    await js(`[...document.querySelectorAll('[role=menuitemcheckbox]')].find(option => option.textContent.startsWith('Blocked (')).click()`);
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 30 of 180')"));
+    await js(`[...document.querySelectorAll('[role=menuitemcheckbox]')].find(option => option.textContent.startsWith('At Risk (')).click()`);
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 60 of 180')"));
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
+    await click("Clear filters");
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 180 of 180')"));
+    await js("document.querySelector('.milestone-grid-scroll').scrollIntoView({block:'start'})");
+    await js(`document.querySelector('[aria-label="Resize Milestone column"]').focus()`);
+    const originalWidth = await js(`Number(document.querySelector('[aria-label="Resize Milestone column"]').getAttribute('aria-valuenow'))`);
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Right" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Right" });
+    await wait(() => js(`Number(document.querySelector('[aria-label="Resize Milestone column"]').getAttribute('aria-valuenow')) === ${originalWidth + 10}`));
+    const grip = await js(`(() => {
+      const r = document.querySelector('[aria-label="Resize Milestone column"]').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", ...grip, button: "left", clickCount: 1 });
+    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x: grip.x + 70, y: grip.y, button: "left", buttons: 1 });
+    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", x: grip.x + 70, y: grip.y, button: "left", clickCount: 1 });
+    await wait(() => js(`Number(document.querySelector('[aria-label="Resize Milestone column"]').getAttribute('aria-valuenow')) >= ${originalWidth + 70}`));
+    assert.equal(await js("JSON.parse(localStorage.getItem('csu-console-milestone-columns-v1')).widths.name"), originalWidth + 80);
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(async () => {
+          const scroll = document.querySelector('.milestone-grid-scroll');
+          const pinned = scroll.querySelector('td.milestone-pinned');
+          scroll.scrollLeft = 0;
+          const left = pinned.getBoundingClientRect().left;
+          scroll.scrollLeft = 300;
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          return Math.abs(pinned.getBoundingClientRect().left - left) <= 1 &&
+            pinned.getBoundingClientRect().width <= scroll.clientWidth - 80 &&
+            document.scrollingElement.scrollWidth <= innerWidth &&
+            scroll.scrollHeight <= scroll.clientHeight + 1;
+        })()`), true, `Pinned column stays visible without covering the viewport or adding vertical table scrolling at ${width}px`);
+      }
+    } finally { window.setContentSize(...original); await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`)); }
+    await setMilestoneField("Freeze column", "none");
+    await wait(() => js("document.querySelectorAll('.milestone-pinned').length === 0"));
+    await setMilestoneField("Freeze column", "number");
+    await wait(() => js("document.querySelector('.milestone-grid th').dataset.column === 'number'"));
+    await click("Portfolio");
+    await clickAria("Milestones");
+    await wait(() => js("document.querySelector('.milestone-grid th')?.dataset.column === 'number'"));
+    assert.equal(await js("JSON.parse(localStorage.getItem('csu-console-milestone-columns-v1')).widths.name"), originalWidth + 80);
+    await click("Columns");
+    await wait(() => js("document.querySelectorAll('.milestone-column-choices input').length === 15"));
+    await js(`['name', 'ownerName', 'actions'].forEach(key => document.querySelector('[name="milestone-column-' + key + '"]').click())`);
+    await wait(() => js("!document.querySelector('.milestone-grid th[data-column=name]') && !document.querySelector('.milestone-grid th[data-column=ownerName]') && !document.querySelector('.milestone-row-actions')"));
+    await click("Columns");
+    await setMilestoneField("Search milestones", "TIMELINE");
+    await setMilestoneField("Group by", "month");
+    await setMilestoneField("Order by", "monthlyUse");
+    await setMilestoneField("Sort direction", "desc");
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 90 of 180')"));
+    const beforeHiddenExport = exportedMilestones.length;
+    await click("Export Excel");
+    await wait(() => exportedMilestones.length === beforeHiddenExport + 1);
+    await workbook.xlsx.readFile(exportedMilestones.at(-1).path);
+    assert.ok(workbook.getWorksheet("Milestones").getRow(1).values.includes("Owner"), "Hidden columns remain in the full-data export");
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    await clickAria("Milestones");
+    await wait(() => js("document.querySelector('.milestone-grid th')?.dataset.column === 'number'"));
+    assert.equal(await js(`(() => {
+      const saved = JSON.parse(localStorage.getItem('csu-console-milestone-columns-v1'));
+      return saved.frozen === 'number' && saved.widths.name === ${originalWidth + 80} &&
+        ['name','ownerName','actions'].every(key => saved.hidden.includes(key)) &&
+        !document.querySelector('.milestone-grid th[data-column=name]') &&
+        !document.querySelector('.milestone-grid th[data-column=ownerName]') &&
+        !document.querySelector('.milestone-row-actions') &&
+        document.querySelector('.milestone-count').textContent.includes('Showing 180 of 180');
+    })()`), true, "Full renderer reload restores column visibility, widths and freeze without remembering row filters");
+    assert.equal(await js(`[...document.querySelectorAll('.milestone-search input')][0].value`), "");
+    await click("Columns");
+    await wait(() => js("Boolean(document.querySelector('[name=milestone-column-name]'))"));
+    await js(`document.querySelector('[name=milestone-column-name]').click()`);
+    await wait(() => js(`document.querySelector('[aria-label="Resize Milestone column"]')?.getAttribute('aria-valuenow') === '${originalWidth + 80}'`));
+    await js(`document.querySelector('[name=milestone-column-number]').click()`);
+    await wait(() => js("document.querySelectorAll('.milestone-pinned').length === 0"));
+    assert.equal(await js("JSON.parse(localStorage.getItem('csu-console-milestone-columns-v1')).frozen"), "number",
+      "Hiding the frozen column retains its preference for when it is shown again");
+    await js(`document.querySelector('[name=milestone-column-number]').click()`);
+    await wait(() => js("document.querySelector('.milestone-grid th')?.classList.contains('milestone-pinned')"));
+    await js(`[...document.querySelectorAll('.milestone-column-choices input')].filter(input => input.checked && input.name !== 'milestone-column-number').forEach(input => input.click())`);
+    await wait(() => js("document.querySelectorAll('.milestone-column-choices input:checked').length === 1"));
+    assert.equal(await js("document.querySelector('[name=milestone-column-number]').disabled"), true, "The last visible column cannot be hidden");
+    await click("Columns");
+    await click("Reset columns");
+    await wait(() => js("document.querySelector('.milestone-grid th').dataset.column === 'name' && document.querySelectorAll('.milestone-grid th').length === 15"));
+    await js("document.querySelector('.milestone-grid-scroll').scrollIntoView({block:'start'})");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      await js(`[...document.querySelectorAll('[aria-label="Dismiss notification"]')].forEach(button => button.click())`);
+      await wait(() => js(`document.querySelectorAll('[aria-label="Dismiss notification"]').length === 0`));
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-milestones.png`));
+      await js("document.querySelector('.app-content').scrollTop = 0");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-filters.png`));
+    }
+    milestoneReadFailure = true;
+    await click("Reload saved data");
+    await wait(() => js("document.body.innerText.includes('Synthetic saved-data read failed.')"));
+    assert.equal(await js("document.querySelectorAll('[data-milestone-id]').length"), 50, "A failed reload retains explicitly stale displayed rows instead of pretending there are none");
+    milestoneReadFailure = false;
+    await click("Reload saved data");
+    await wait(() => js("!document.body.innerText.includes('Synthetic saved-data read failed.')"));
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+    console.log("Milestone workspace passed: multi-select search/filter/group/sort, collapsed full-result XLSX export/reveal, validation, resize, pinning and persistence.");
   };
   const checkSettingsLayout = async () => {
     await click("Settings");
@@ -413,7 +743,7 @@ if (!process.versions.electron) {
           const filters = document.querySelector('.milestone-filters');
           return [...filters.querySelectorAll('.field')].every(field => {
             const cell = field.getBoundingClientRect();
-            return [...field.querySelectorAll('.fui-Select, select, .fui-Input')].every(control => {
+            return [...field.querySelectorAll('.fui-Select, select, .fui-Input, .fui-Combobox')].every(control => {
               const rect = control.getBoundingClientRect();
               return rect.left >= cell.left - 1 && rect.right <= cell.right + 1;
             });
@@ -458,6 +788,38 @@ if (!process.versions.electron) {
     await click("Close");
   };
   app.whenReady().then(async () => {
+    const { VaultStore } = require(join(root, "dist-main", "main", "storage", "vault.js"));
+    const { PortfolioService } = require(join(root, "dist-main", "main", "portfolio-service.js"));
+    const { MilestoneExporter } = require(join(root, "dist-main", "main", "milestone-export.js"));
+    const { milestoneExportSchema, msxLinkSchema } = require(join(root, "dist-main", "main", "ipc.js"));
+    ipcMain.handle(IPC.openExternal, (_event, url) => { openedMilestoneLinks.push(msxLinkSchema.parse(url)); });
+    ipcMain.handle(IPC.copyMsxLink, (_event, url) => {
+      const parsed = msxLinkSchema.parse(url);
+      if (failMilestoneCopy) throw new Error("Synthetic clipboard failure.");
+      copiedMilestoneLinks.push(parsed);
+    });
+    milestoneStore = new VaultStore(join(process.env.CSU_SMOKE_DATA, "milestone-vault"));
+    const milestoneService = new PortfolioService(milestoneStore, {}, {}, "smoke-test");
+    milestoneStore.put("settings", "default", savedSettings);
+    for (const account of demoAccounts) {
+      milestoneStore.put("portfolio-account", account.id, account);
+      milestoneStore.put(`current:${account.id}`, "milestones", demoMilestones(account));
+    }
+    const downloadPath = join(process.env.CSU_SMOKE_DATA, "Downloads");
+    require("node:fs").mkdirSync(downloadPath);
+    const milestoneExporter = new MilestoneExporter(ids => milestoneService.getMilestones(ids), () => downloadPath,
+      path => { revealedMilestones.push(path); });
+    ipcMain.handle(IPC.getMilestones, () => {
+      if (milestoneReadFailure) throw new Error("Synthetic saved-data read failed.");
+      return milestoneService.getMilestones();
+    });
+    ipcMain.handle(IPC.exportMilestones, async (event, request) => {
+      assert.equal(event.sender, window.webContents);
+      assert.equal(event.senderFrame, window.webContents.mainFrame);
+      const result = await milestoneExporter.export(milestoneExportSchema.parse(request));
+      exportedMilestones.push(result);
+      return result;
+    });
     const { AiService, ConnectionError } = require(join(root, "dist-main", "main", "ai-service.js"));
     let aiPreferences = null;
     const aiService = new AiService({
@@ -499,6 +861,7 @@ if (!process.versions.electron) {
     ipcMain.handle(IPC.updateSettings, (_event, settings) => {
       if (failSettings) throw new Error("Synthetic settings save failed.");
       savedSettings = settings;
+      milestoneStore.put("settings", "default", settings);
       privacyAccepted = settings.privacyAccepted;
       return settings;
     });
@@ -548,12 +911,7 @@ if (!process.versions.electron) {
         added: [{ id: `change-${id}`, name: "Demo migration", accountName: "Test account", ownerName: "Demo Owner", date: "2027-01-15", status: "On Track" }],
         modified: [], disappeared: [], churn: [], runCount: 1, fromRunId: null, toRunId: "demo-run",
       },
-      milestones: Array.from({ length: 60 }, (_, index) => ({
-        id: `milestone-${id}-${index}`, name: "Demo migration", number: `DEMO-${index}`, date: "2027-01-15",
-        status: "On Track", statusValue: 861980000, commitment: "Committed",
-        ownerId: "demo-owner", ownerName: "Demo Owner with a long display name for responsive controls", accountId: id, accountName: "Test account",
-        monthlyUse: 1000, monthlyUseFormatted: "$1,000", url: "https://example.invalid/milestone",
-      })),
+      milestones: milestoneService.getMilestones([id]).milestones,
     }));
     ipcMain.handle(IPC.resetSetup, async () => {
       await aiService.reset();
@@ -654,7 +1012,7 @@ if (!process.versions.electron) {
     await checkOwnerScrolling();
     await clickMetric("On track");
     await wait(() => js("Boolean(document.querySelector('.milestone-table-wrap'))"));
-    assert.equal(await js("[...document.querySelectorAll('.milestone-filters select')].some(select => select.value === 'On Track')"), true,
+    assert.equal(await js(`[...document.querySelectorAll('.milestone-facet')].find(field => field.querySelector('label').textContent === 'Status').querySelector('input').value === 'On Track'`), true,
       "Grouped status metric retains its milestone filter");
     await click("Close");
     await clickMetric("Stale accounts");
@@ -664,6 +1022,7 @@ if (!process.versions.electron) {
     await click("Close");
     await checkWorkspaceFeatures();
     window.webContents.debugger.attach("1.3");
+    await checkMilestoneWorkspace();
     await checkCollapsedSidebar();
     await checkSettingsLayout();
     const theme = await js("document.documentElement.dataset.theme");
@@ -679,6 +1038,7 @@ if (!process.versions.electron) {
     await checkPortfolioCards();
     await checkOwnerScrolling();
     await checkAllChangesSpacing();
+    await checkMilestoneWorkspace();
     await checkCollapsedSidebar();
     await checkSettingsLayout();
     window.webContents.debugger.detach();
@@ -733,12 +1093,14 @@ if (!process.versions.electron) {
     assert.equal(await js("document.querySelector('.sidebar button[aria-label=\"Team\"]') === null"), true, "Reset restores Team off");
     assert.equal(await js("Boolean(document.querySelector('.sidebar button[aria-label=\"PODs\"]'))"), true, "Reset restores PODs on");
     assert.equal(territoryRefreshes, 1, "Legacy territory metadata is loaded once and reused across workspace navigation");
-    console.log("MCAPS UI smoke passed: persistent Team/POD feature switches, collapsible accessible navigation at three widths in both themes; existing AI/Work IQ, Settings layout, portfolio, changes, scrolling, onboarding, reset and updates.");
+    console.log("MCAPS UI smoke passed: milestones workspace, real local XLSX exports, grouping, resizing and frozen columns; persistent Team/POD switches and collapsed navigation at three widths in both themes; existing AI/Work IQ, Settings layout, portfolio, changes, scrolling, onboarding, reset and updates.");
+    milestoneStore.close();
     window.destroy();
     app.exit(0);
   }).catch((error) => {
     console.error(error);
     if (window && !window.isDestroyed()) window.destroy();
+    milestoneStore?.close();
     app.exit(1);
   });
 }

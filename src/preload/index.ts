@@ -44,6 +44,8 @@ const IPC = {
   addAccount: "accounts:add",
   removeAccount: "accounts:remove",
   getOverview: "portfolio:overview",
+  getMilestones: "milestones:list",
+  exportMilestones: "milestones:export",
   refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",
   fetchAccounts: "portfolio:fetch",
@@ -57,6 +59,7 @@ const IPC = {
   removePod: "pods:remove",
   listPods: "pods:list",
   openExternal: "app:open-external",
+  copyMsxLink: "msx:copy-link",
 } as const;
 
 const api: DesktopApi = {
@@ -113,6 +116,8 @@ const api: DesktopApi = {
   removeAccount: (accountId: string, deleteHistory: boolean) =>
     ipcRenderer.invoke(IPC.removeAccount, { accountId, deleteHistory }),
   getOverview: () => ipcRenderer.invoke(IPC.getOverview),
+  getMilestones: () => ipcRenderer.invoke(IPC.getMilestones),
+  exportMilestones: (request) => ipcRenderer.invoke(IPC.exportMilestones, request),
   refreshAccountTerritories: () => ipcRenderer.invoke(IPC.refreshAccountTerritories),
   getAccountState: (accountId: string) =>
     ipcRenderer.invoke(IPC.getAccountState, accountId),
@@ -132,6 +137,7 @@ const api: DesktopApi = {
   removePod: (podId: string) => ipcRenderer.invoke(IPC.removePod, podId),
   listPods: () => ipcRenderer.invoke(IPC.listPods),
   openExternal: (url: string) => ipcRenderer.invoke(IPC.openExternal, url),
+  copyMsxLink: (url: string) => ipcRenderer.invoke(IPC.copyMsxLink, url),
 };
 
 contextBridge.exposeInMainWorld("desktop", Object.freeze(api));

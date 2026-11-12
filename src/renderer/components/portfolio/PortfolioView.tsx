@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AccountOverview,
-  NormalizedMilestone,
+  MilestoneRow,
 } from "../../../shared/types";
 import { useLoadedAppData, useAppData } from "../../state/AppDataProvider";
 import { useNavigation } from "../../state/NavigationProvider";
@@ -69,7 +69,7 @@ export function PortfolioView() {
   const [activeFetch, setActiveFetch] = useState<string | null>(null);
   const [drilldown, setDrilldown] = useState<PortfolioDrilldown | null>(null);
   const [portfolioMilestones, setPortfolioMilestones] =
-    useState<NormalizedMilestone[] | null>(null);
+    useState<MilestoneRow[] | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldownError, setDrilldownError] = useState<string | null>(null);
   const [territoriesLoading, setTerritoriesLoading] = useState(false);
@@ -124,10 +124,8 @@ export function PortfolioView() {
 
     setDrilldownLoading(true);
     try {
-      const states = await Promise.all(
-        overview.accounts.map((account) => window.desktop.getAccountState(account.id)),
-      );
-      setPortfolioMilestones(states.flatMap((state) => state.milestones));
+      const dataset = await window.desktop.getMilestones();
+      setPortfolioMilestones(dataset.milestones);
     } catch (error) {
       setDrilldownError(error instanceof Error ? error.message : String(error));
     } finally {

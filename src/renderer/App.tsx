@@ -15,6 +15,7 @@ import { AllChangesView } from "./components/changes/AllChangesView";
 import { TeamView } from "./components/team/TeamView";
 import { PodsView } from "./components/pods/PodsView";
 import { SettingsView } from "./components/settings/SettingsView";
+import { MilestonesView } from "./components/milestones/MilestonesView";
 import { UpdatesPanel } from "./components/settings/UpdatesPanel";
 import { UpdateProvider } from "./state/UpdateProvider";
 import { ToastViewport } from "./components/ui/ToastViewport";
@@ -46,6 +47,8 @@ function RouteOutlet() {
   switch (route.name) {
     case "portfolio":
       return <PortfolioView />;
+    case "milestones":
+      return <MilestonesView />;
     case "changes":
       return <AllChangesView />;
     case "team":

@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import type { NormalizedMilestone } from "../../../shared/types";
+import type { MilestoneRow } from "../../../shared/types";
 import { StatCard } from "../ui/StatCard";
 import { BreakdownList } from "../ui/BreakdownList";
 import { MilestoneTable } from "./MilestoneTable";
 import { formatCurrency, formatNumber } from "../../lib/format";
 import { groupCount } from "../../lib/breakdown";
-import { monthKey, monthLabel } from "../../lib/milestoneFilters";
+import { monthKey, monthLabel } from "../../../domain/milestone-view";
 
 interface AccountDashboardTabProps {
-  milestones: NormalizedMilestone[];
+  milestones: MilestoneRow[];
 }
 
 export function AccountDashboardTab({ milestones }: AccountDashboardTabProps) {

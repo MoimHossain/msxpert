@@ -8,6 +8,7 @@ import { AuthService } from "./auth";
 import { MsxClient } from "./msx-client";
 import { PortfolioService } from "./portfolio-service";
 import { VaultStore } from "./storage/vault";
+import { milestone } from "../../tests/milestone-fixture";
 
 vi.mock("electron", () => ({
   safeStorage: {
@@ -102,6 +103,37 @@ describe("data-preserving setup reset", () => {
     service.updateSettings({ ...settings, teamEnabled: true, podsEnabled: true });
     expect(service.listTeam()).toEqual([person]);
     expect(store.get("pod", pod.id)).toEqual(pod);
+  });
+
+  it("reads only active cached milestones, retains child/portfolio identity, reports gaps and deduplicates overlaps", () => {
+    store.put("current:local-customer", "milestones", [milestone({ id: "shared", accountName: "Actual subsidiary" })]);
+    store.put("portfolio-account", "overlap", { ...account, id: "overlap", name: "Z overlap" });
+    store.put("current:overlap", "milestones", [milestone({ id: "shared" }), milestone({ id: "second" })]);
+    store.put("portfolio-account", "missing", { ...account, id: "missing", name: "Not captured" });
+    store.put("archived-portfolio-account", "archived", { ...account, id: "archived" });
+    store.put("current:archived", "milestones", [milestone({ id: "archived-only" })]);
+    const source = service.getMilestones();
+    expect(source.milestones.map(row => row.id)).toEqual(["shared", "second"]);
+    expect(source.milestones[0]).toMatchObject({
+      portfolioAccountId: "local-customer", portfolioAccountName: "Example customer", portfolioTpid: "100", accountName: "Actual subsidiary",
+    });
+
+    expect(source.missingAccountIds).toEqual(["missing"]);
+    expect(service.getMilestones(["overlap"]).milestones[0]?.portfolioAccountId).toBe("overlap");
+    expect(() => service.getMilestones(["archived"])).toThrow("unavailable");
+    expect(() => service.getMilestones(["overlap", "overlap"])).toThrow("unavailable");
+  });
+
+  it("reads legacy captures without creators as unknown without rewriting history or fetching MSX", () => {
+    const legacy: Partial<ReturnType<typeof milestone>> = milestone({ id: "legacy" });
+    delete legacy.createdById;
+    delete legacy.createdByName;
+    store.put(`current:${account.id}`, "milestones", [legacy]);
+    const fetch = vi.spyOn(msx, "fetchMilestones");
+    expect(service.getMilestones().milestones[0]).toMatchObject({ createdById: null, createdByName: null });
+    expect(store.get(`current:${account.id}`, "milestones")).toEqual([legacy]);
+    expect(store.get(`snapshots:${account.id}`, account.createdAt)).toEqual({ retained: "snapshot" });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("archives active customers, resets first-run preferences, and keeps history, team, and POD records", async () => {

@@ -13,6 +13,7 @@ import { APP_NAME, LEGACY_APP_NAME } from "../shared/branding";
 import { loadConnectionConfig } from "./connection-config";
 import { AiService } from "./ai-service";
 import { connectionRunners } from "./ai-runtime";
+import { MilestoneExporter } from "./milestone-export";
 
 // Keep the Chromium profile as well as the encrypted vault across the rename.
 const userDataPath = join(app.getPath("appData"), LEGACY_APP_NAME);
@@ -27,7 +28,8 @@ let mainWindow: BrowserWindow | null = null;
 let store: VaultStore | null = null;
 let updates: UpdateService | null = null;
 let ai: AiService | null = null;
-let stoppingAi = false;
+let stoppingOperations = false;
+let milestoneExports: MilestoneExporter | null = null;
 
 function isTrustedRequest(event: IpcMainInvokeEvent): boolean {
   return Boolean(mainWindow && event.sender === mainWindow.webContents &&
@@ -109,7 +111,8 @@ if (singleInstance) {
     const portfolio = new PortfolioService(store, auth, msx, app.getVersion());
     const gate = new OperationGate();
     ai = new AiService(store, connectionRunners);
-    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai);
+    milestoneExports = new MilestoneExporter(ids => portfolio.getMilestones(ids), () => app.getPath("downloads"), path => shell.showItemInFolder(path));
+    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai, milestoneExports);
     updates = createUpdateRuntime(dataPath, gate, () => mainWindow, isTrustedRequest);
     await createWindow();
   }).catch((error: unknown) => {
@@ -118,13 +121,13 @@ if (singleInstance) {
   });
 
   app.on("before-quit", (event) => {
-    if (ai?.busy) {
+    if (ai?.busy || milestoneExports?.busy) {
       event.preventDefault();
-      if (!stoppingAi) {
-        stoppingAi = true;
-        void ai.disconnect().then(() => app.quit()).catch(() => {
-          console.error("AI_SHUTDOWN_FAILED");
-          stoppingAi = false;
+      if (!stoppingOperations) {
+        stoppingOperations = true;
+        void Promise.all([ai?.disconnect(), milestoneExports?.waitForIdle()]).then(() => app.quit()).catch(() => {
+          console.error("OPERATION_SHUTDOWN_FAILED");
+          stoppingOperations = false;
         });
       }
       return;

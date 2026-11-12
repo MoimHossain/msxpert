@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NormalizedMilestone, ScopeSettings } from "../shared/types";
-import { classifyGone, MsxClient } from "./msx-client";
+import { classifyGone, MsxClient, normalizeMilestone } from "./msx-client";
 
 const scope: ScopeSettings = {
   label: "FY27",
@@ -43,6 +43,8 @@ function milestone(
     opportunityName: null,
     opportunityUrl: null,
     createdOn: null,
+    createdById: null,
+    createdByName: null,
     modifiedOn: null,
     modifiedByName: null,
     versionNumber: "1",
@@ -52,6 +54,20 @@ function milestone(
 }
 
 describe("classifyGone", () => {
+  it("captures Raised By from Created By rather than Owner, preserving missing and automated creators", () => {
+    const raw = {
+      msp_engagementmilestoneid: "milestone", _ownerid_value: "owner",
+      "_ownerid_value@OData.Community.Display.V1.FormattedValue": "Current Owner",
+      _createdby_value: "creator", "_createdby_value@OData.Community.Display.V1.FormattedValue": "Creating Agent",
+    };
+    expect(normalizeMilestone(raw)).toMatchObject({
+      ownerId: "owner", ownerName: "Current Owner", createdById: "creator", createdByName: "Creating Agent",
+    });
+    expect(normalizeMilestone({ msp_engagementmilestoneid: "legacy" })).toMatchObject({
+      createdById: null, createdByName: null,
+    });
+  });
+
   it("classifies an out-of-window milestone as re-dated", () => {
     const result = classifyGone(
       scope,

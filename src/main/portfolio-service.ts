@@ -9,6 +9,7 @@ import type {
   ChangeSet,
   FetchResult,
   NormalizedMilestone,
+  MilestoneRow,
   Pod,
   PodSummary,
   PortfolioAccount,
@@ -24,6 +25,7 @@ import type { MsxClient } from "./msx-client";
 import type { VaultStore } from "./storage/vault";
 import { ProfileService } from "./profile-service";
 import { TerritoryImportService } from "./territory-import-service";
+import type { MilestoneDataset } from "../shared/milestones";
 
 interface CurrentManifest {
   runId: string;
@@ -136,6 +138,28 @@ export class PortfolioService {
     return this.store
       .list<PortfolioAccount>(ACCOUNT_KIND)
       .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  getMilestones(accountIds?: string[]): MilestoneDataset {
+    const active = this.listAccounts().sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    if (accountIds && (new Set(accountIds).size !== accountIds.length || accountIds.some(id => !active.some(account => account.id === id)))) {
+      throw new Error("The milestone scope contains an unavailable portfolio account. Reload saved data.");
+    }
+    const accounts = accountIds ? active.filter(account => accountIds.includes(account.id)) : active;
+    const milestones = new Map<string, MilestoneRow>();
+    const missingAccountIds: string[] = [];
+    for (const account of accounts) {
+      const current = this.store.get<NormalizedMilestone[]>(currentKind(account.id), "milestones");
+      if (current === null) missingAccountIds.push(account.id);
+      for (const milestone of current ?? []) {
+        if (!milestones.has(milestone.id)) milestones.set(milestone.id, {
+          ...milestone, createdById: milestone.createdById ?? null, createdByName: milestone.createdByName ?? null,
+          portfolioAccountId: account.id, portfolioAccountName: account.name, portfolioTpid: account.tpid,
+        });
+      }
+    }
+    return { milestones: [...milestones.values()], accountIds: accounts.map(account => account.id),
+      missingAccountIds, scope: this.getSettings().scope };
   }
 
   async searchAccounts(term: string) {
@@ -309,7 +333,7 @@ export class PortfolioService {
       accountTree:
         this.store.get(currentKind(accountId), "tree") ?? [],
       scope: this.getSettings().scope,
-      milestones: this.currentMilestones(accountId),
+      milestones: this.getMilestones([accountId]).milestones,
       runs: this.runs(accountId),
       since: {
         ...unreviewed.changes,

@@ -1737,6 +1737,215 @@ button.stat-metric:hover,
   margin: 0;
 }
 
+.milestone-explorer-controls {
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.milestones-page > .field-hint {
+  margin-bottom: 12px;
+}
+
+.milestone-filters .milestone-search {
+  grid-column: 1 / -1;
+}
+
+.milestone-facet .fui-Combobox {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.milestone-facet input {
+  min-width: 0;
+}
+
+.milestone-shaping {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  align-items: end;
+  gap: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.milestone-grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.milestone-grid-toolbar .milestone-count {
+  margin: 0 auto 8px 0;
+}
+
+.milestone-grid-toolbar .field {
+  flex: 0 1 200px;
+  margin: 0;
+}
+
+.milestone-grid-hint {
+  margin: 0;
+}
+
+.milestone-column-picker {
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(560px, 75vh);
+  overflow: auto;
+}
+
+.milestone-column-choices {
+  display: grid;
+}
+
+.milestone-export-result {
+  overflow-wrap: anywhere;
+}
+
+.milestone-grid {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.milestone-grid th {
+  position: relative;
+  background: var(--color-bg-subtle);
+}
+
+.milestone-grid td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.milestone-cell-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.milestone-name-summary {
+  display: grid;
+  gap: 3px;
+}
+
+.milestone-summary-detail {
+  -webkit-line-clamp: 1;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.milestone-account-detail {
+  color: var(--color-brand);
+  font-weight: 600;
+}
+
+.milestone-workload-detail {
+  color: #7650ad;
+  font-style: italic;
+}
+
+:root[data-theme="dark"] .milestone-workload-detail {
+  color: #c5adff;
+}
+
+.milestone-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  white-space: normal;
+}
+
+.milestone-row-actions .link-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.milestone-row-actions .text-muted,
+.milestone-row-actions .link-button:disabled {
+  color: var(--color-text-secondary);
+  cursor: default;
+}
+
+.milestone-grid th .table-sort-button {
+  width: 100%;
+  padding-right: 12px;
+  white-space: normal;
+  text-align: left;
+}
+
+.milestone-grid .milestone-pinned {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-bg-elevated);
+  box-shadow: 3px 0 0 var(--color-border);
+}
+
+.milestone-grid th.milestone-pinned {
+  z-index: 2;
+  background: var(--color-bg-subtle);
+}
+
+.milestone-grid tr:hover td.milestone-pinned {
+  background: var(--color-bg-subtle);
+}
+
+.column-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  border-right: 2px solid var(--color-border-strong);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resizer:hover,
+.column-resizer:focus-visible {
+  background: color-mix(in srgb, var(--color-brand) 20%, transparent);
+  border-color: var(--color-brand);
+}
+
+.milestone-group-row td {
+  padding: 0;
+  background: var(--color-info-bg);
+}
+
+.milestone-group-toggle {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: normal;
+  text-align: left;
+  max-width: min(520px, 85vw);
+}
+
 .table-scroll {
   /* Contain absolutely positioned accessibility labels within the scrolling table. */
   position: relative;

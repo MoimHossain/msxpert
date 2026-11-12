@@ -33,6 +33,8 @@ function milestone(overrides: Partial<NormalizedMilestone> = {}): NormalizedMile
     opportunityName: null,
     opportunityUrl: null,
     createdOn: null,
+    createdById: null,
+    createdByName: null,
     modifiedOn: null,
     modifiedByName: null,
     versionNumber: "1",

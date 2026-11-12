@@ -31,6 +31,8 @@ export const IPC = {
   addAccount: "accounts:add",
   removeAccount: "accounts:remove",
   getOverview: "portfolio:overview",
+  getMilestones: "milestones:list",
+  exportMilestones: "milestones:export",
   refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",
   fetchAccounts: "portfolio:fetch",
@@ -44,4 +46,5 @@ export const IPC = {
   removePod: "pods:remove",
   listPods: "pods:list",
   openExternal: "app:open-external",
+  copyMsxLink: "msx:copy-link",
 } as const;

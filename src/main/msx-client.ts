@@ -164,6 +164,8 @@ export function normalizeMilestone(record: RawRecord): NormalizedMilestone {
     opportunityName: formatted(record, "_msp_opportunityid_value"),
     opportunityUrl: opportunityId ? opportunityUrl(opportunityId) : null,
     createdOn: stringOrNull(record.createdon),
+    createdById: stringOrNull(record._createdby_value),
+    createdByName: formatted(record, "_createdby_value"),
     modifiedOn: stringOrNull(record.modifiedon),
     modifiedByName: formatted(record, "_modifiedby_value"),
     versionNumber: stringOrNull(record.versionnumber),

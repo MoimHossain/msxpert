@@ -1,3 +1,5 @@
+import type { MilestoneDataset, MilestoneExportRequest, MilestoneExportResult } from "./milestones";
+
 export type IsoDate = string;
 export type IsoTimestamp = string;
 
@@ -155,10 +157,18 @@ export interface NormalizedMilestone {
   opportunityName: string | null;
   opportunityUrl: string | null;
   createdOn: string | null;
+  createdById: string | null;
+  createdByName: string | null;
   modifiedOn: string | null;
   modifiedByName: string | null;
   versionNumber: string | null;
   url: string;
+}
+
+export interface MilestoneRow extends NormalizedMilestone {
+  portfolioAccountId: string;
+  portfolioAccountName: string;
+  portfolioTpid: string;
 }
 
 export interface GoneReason {
@@ -276,7 +286,7 @@ export interface AccountState {
   account: PortfolioAccount;
   accountTree: AccountTreeNode[];
   scope: ScopeSettings;
-  milestones: NormalizedMilestone[];
+  milestones: MilestoneRow[];
   runs: RunEntry[];
   since: ChangeSet & {
     runCount: number;
@@ -396,6 +406,8 @@ export interface DesktopApi {
   addAccount(accountId: string): Promise<PortfolioAccount>;
   removeAccount(accountId: string, deleteHistory: boolean): Promise<void>;
   getOverview(): Promise<PortfolioOverview>;
+  getMilestones(): Promise<MilestoneDataset>;
+  exportMilestones(request: MilestoneExportRequest): Promise<MilestoneExportResult>;
   refreshAccountTerritories(): Promise<void>;
   getAccountState(accountId: string): Promise<AccountState>;
   fetchAccounts(accountId?: string): Promise<FetchResult>;
@@ -409,4 +421,5 @@ export interface DesktopApi {
   removePod(podId: string): Promise<void>;
   listPods(): Promise<PodSummary[]>;
   openExternal(url: string): Promise<void>;
+  copyMsxLink(url: string): Promise<void>;
 }

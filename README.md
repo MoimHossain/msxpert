@@ -72,6 +72,61 @@ Reset clears app-owned AI configuration/results, not the official clients'
 global logins. Runtime-owned synthetic diagnostics may follow those clients'
 retention policies.
 
+### Milestone exploration and Excel export
+
+**Milestones**, between Portfolio and All Changes, reads the latest saved
+captures across active tracked customers. **Reload saved data** rereads the
+vault; use Portfolio's Fetch actions for fresh MSX data. The page reports
+customers without captures and keeps portfolio parents distinct from the
+actual MSX account on each milestone.
+
+The same exploration controls are used in account milestone tabs and
+account/portfolio metric drill-downs: text/comment search, searchable multi-value
+facets (including missing values), inclusive date and signed monthly-use bounds,
+up to three grouping levels, sorting, group expand/collapse, and pagination.
+Selecting multiple values within one facet means OR; separate constraints mean
+AND. Monthly amounts remain in source units, without currency conversion.
+
+**Raised By** is the MSX record's **Created By**, not its current owner or an
+inferred human requester. It supports search, filtering, grouping, ordering,
+column preferences, details and Excel export, including the source creator ID.
+Older captures need a normal **Portfolio > Fetch** to populate creator details;
+Reload saved data cannot reconstruct missing fields. Missing creators stay
+unknown. Raised-by organization classification is deferred; no directory calls
+or new permissions are introduced.
+
+Drag any data-column divider to resize it, or focus the divider and use
+Left/Right, Shift+Left/Right, or Home. **Freeze column** moves the selected
+column first and keeps it visible during horizontal scrolling; Milestone is
+frozen initially. **Columns** shows/hides data columns and the Links & details
+column, with at least one column remaining visible. Widths, visibility and
+freezing are remembered locally across views and app restarts; search, filters,
+grouping and sorting are not saved. Hidden columns retain their widths and freeze
+preference; freezing a hidden column makes it visible. **Reset columns**
+restores all columns and defaults; narrow views temporarily limit frozen width to leave room
+for the other columns.
+
+Every milestone grid has **Export Excel**. It saves a genuine `.xlsx` under
+Windows' configured Downloads folder and asks File Explorer to select it.
+The file includes all filtered milestones in fully expanded group/sort order,
+not just the current page; collapsed groups do not remove export rows.
+The workbook contains typed dates/numbers, filterable headers, frozen panes,
+source IDs/comments/URLs, and a View sheet recording the applied filters/scope.
+Exports are limited to 50,000 rows and Excel's cell length limit, never silently
+truncated. If saved data changes during export preparation, reload the view and
+retry. The workbook is **unencrypted business data outside the vault**.
+Folder-opening failures are reported separately from successful file saves.
+
+Milestone cells show the MSX account and workload below the name. Names and
+other text columns wrap to at most two lines; account/workload sublines use one
+line each. Overflow is ellipsized without losing the full tooltip/details data.
+The sublines show only values: the account is semibold blue, and the workload
+is italic purple with theme-aware contrast. Tooltips retain the field labels.
+The last grid column has labeled **Milestone** and **Opportunity** links that
+open in the default browser, and **View** for local details. Right-click either
+link (or focus it and press Shift+F10) for **Copy to clipboard**. Missing links
+are unavailable; clipboard and browser-opening failures are shown explicitly.
+
 ## Security model
 
 - Uses the system browser for Microsoft authentication.

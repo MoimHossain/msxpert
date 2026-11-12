@@ -1,4 +1,4 @@
-import { ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { app, clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
 import type { AuthService } from "./auth";
 import { AuthRequiredError } from "./auth";
@@ -8,9 +8,34 @@ import { IPC } from "../shared/ipc";
 import type { OperationGate } from "./operation-gate";
 import type { AiService } from "./ai-service";
 import { aiConfigurationSchema, workiqConfigurationSchema } from "../shared/ai";
+import { FACET_KEYS, SORT_KEYS, MAX_EXPORT_ROWS } from "../shared/milestones";
+import { MilestoneExporter } from "./milestone-export";
+import { filterIssue } from "../domain/milestone-view";
 
 const idSchema = z.string().min(1).max(200);
 const nullableText = z.string().max(4000).nullable();
+const dateBound = z.union([z.literal(""), z.iso.date()]);
+const facetValues = z.array(z.string().max(1000)).max(2000);
+export const msxLinkSchema = z.url().refine(url => {
+  if (!URL.canParse(url)) return false;
+  const parsed = new URL(url);
+  return parsed.protocol === "https:" && parsed.origin === MSX_ORIGIN;
+}, "Only Microsoft Sales links are allowed.");
+export const milestoneExportSchema = z.object({
+  accountIds: z.array(idSchema).min(1).max(2000).refine(ids => new Set(ids).size === ids.length, "Duplicate portfolio accounts."),
+  expectedIds: z.array(idSchema).min(1).max(MAX_EXPORT_ROWS).refine(ids => new Set(ids).size === ids.length, "Duplicate milestones."),
+  expectedHash: z.string().regex(/^[a-f0-9]{64}$/),
+  view: z.object({
+    filters: z.object({
+      search: z.string().max(4000), status: facetValues, owner: facetValues, creator: facetValues, portfolio: facetValues,
+      account: facetValues, commitment: facetValues, month: facetValues, solutionArea: facetValues,
+      azureRegion: facetValues, workload: facetValues, dateFrom: dateBound, dateTo: dateBound,
+      minMonthlyUse: z.string().max(100), maxMonthlyUse: z.string().max(100),
+    }).strict().refine(filters => !filterIssue(filters), "Invalid milestone filter bounds."),
+    groupBy: z.array(z.enum(FACET_KEYS)).max(3).refine(keys => new Set(keys).size === keys.length, "Duplicate grouping levels."),
+    sortKey: z.enum(SORT_KEYS), sortDirection: z.enum(["asc", "desc"]),
+  }).strict(),
+}).strict();
 
 const settingsSchema = z.object({
   scope: z.object({
@@ -84,6 +109,7 @@ export function registerIpc(
   gate: OperationGate,
   isTrusted: (event: IpcMainInvokeEvent) => boolean,
   ai: AiService,
+  exporter = new MilestoneExporter(ids => service.getMilestones(ids), () => app.getPath("downloads"), path => shell.showItemInFolder(path)),
 ): void {
   function handle(channel: string, handler: (input: unknown) => unknown): void {
     ipcMain.handle(channel, (event, input: unknown) => {
@@ -164,6 +190,8 @@ export function registerIpc(
     ({ accountId, deleteHistory }) => service.removeAccount(accountId, deleteHistory),
   );
   handle(IPC.getOverview, () => service.getOverview());
+  handle(IPC.getMilestones, () => service.getMilestones());
+  register(IPC.exportMilestones, milestoneExportSchema, request => exporter.export(request));
   handle(IPC.refreshAccountTerritories, () => service.refreshAccountTerritories());
   register(IPC.getAccountState, idSchema, (accountId) =>
     service.getAccountState(accountId),
@@ -188,11 +216,8 @@ export function registerIpc(
   register(IPC.savePod, podSchema, (pod) => service.savePod(pod));
   register(IPC.removePod, idSchema, (podId) => service.removePod(podId));
   handle(IPC.listPods, () => service.listPods());
-  register(IPC.openExternal, z.url(), async (url) => {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" || parsed.origin !== MSX_ORIGIN) {
-      throw new Error("Only Microsoft Sales links can be opened.");
-    }
-    await shell.openExternal(parsed.toString());
+  register(IPC.copyMsxLink, msxLinkSchema, url => clipboard.writeText(url));
+  register(IPC.openExternal, msxLinkSchema, async (url) => {
+    await shell.openExternal(new URL(url).toString());
   });
 }

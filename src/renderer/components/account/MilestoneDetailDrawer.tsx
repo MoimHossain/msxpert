@@ -56,6 +56,7 @@ export function MilestoneDetailDrawer({ milestone, onClose }: MilestoneDetailDra
         <Fact label="Monthly use" value={milestone.monthlyUseFormatted ?? milestone.monthlyUse} />
         <Fact label="Non-recurring months" value={milestone.nonRecurringMonths} />
         <Fact label="Owner" value={milestone.ownerName} />
+        <Fact label="Raised By" value={milestone.createdByName} />
         <Fact label="Account" value={milestone.accountName} />
         <Fact
           label="Opportunity"
