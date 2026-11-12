@@ -99,17 +99,41 @@ if (!process.versions.electron) {
     })()`);
     assert.ok(clicked, `Enabled button: ${label}`);
   };
-  const hoverThemeToggle = async () => {
+  const checkSettingsLayout = async () => {
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.appearance-settings input'))"));
+    assert.equal(await js("document.querySelector('.sidebar .theme-toggle') === null"), true, "Theme controls live only inside Settings");
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(() => {
+          const page = document.querySelector('.settings-page').getBoundingClientRect();
+          return [...document.querySelectorAll('.settings-page > .settings-section')].every(card => {
+            const rect = card.getBoundingClientRect();
+            return Math.abs(rect.width - page.width) <= 1;
+          }) && [...document.querySelectorAll('.settings-page .fact-row dd')].every(value => {
+            const bounds = value.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(value);
+            return [...range.getClientRects()].every(rect => rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1);
+          }) && document.querySelector('.app-content').scrollWidth <= document.querySelector('.app-content').clientWidth;
+        })()`), true, `Settings cards fill the page and long update/data values do not overlap at ${width}px`);
+      }
+    } finally {
+      window.setContentSize(...original);
+      await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`));
+    }
+    await js("document.querySelector('.app-content').scrollTop = 0");
     const readLayout = `(() => {
-      const button = document.querySelector('.theme-toggle').getBoundingClientRect();
+      const button = document.querySelector('.appearance-settings label').getBoundingClientRect();
       return {
         theme: document.documentElement.dataset.theme,
         savedTheme: localStorage.getItem('csu-console-theme'),
         height: document.scrollingElement.scrollHeight,
         width: document.scrollingElement.scrollWidth,
-        rootHeight: document.querySelector('#root').getBoundingClientRect().height,
-        background: getComputedStyle(document.querySelector('.fluent-app-theme')).backgroundColor,
-        pointerReachesButton: Boolean(document.elementFromPoint(button.x + button.width / 2, button.y + button.height / 2)?.closest('.theme-toggle')),
         button: { x: button.x, y: button.y, width: button.width, height: button.height },
       };
     })()`;
@@ -117,22 +141,49 @@ if (!process.versions.electron) {
     await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", {
       type: "mouseMoved", x: before.button.x + before.button.width / 2, y: before.button.y + before.button.height / 2,
     });
-    await wait(() => js("document.querySelector('.theme-toggle').matches(':hover') && Boolean(document.querySelector('[role=tooltip]'))"));
-    assert.equal(await js(`(() => {
-      const tooltip = getComputedStyle(document.querySelector('[role=tooltip]'));
-      const app = getComputedStyle(document.querySelector('#root .fluent-app-theme'));
-      const token = '--colorNeutralBackground1';
-      return tooltip.getPropertyValue(token).trim().length > 0 &&
-        tooltip.getPropertyValue(token) === app.getPropertyValue(token);
-    })()`), true, "Portaled tooltip retains the selected Fluent theme");
-    for (let sample = 0; sample < 8; sample++) {
-      assert.deepEqual(await js(readLayout), before, "Tooltip hover must preserve the theme, layout, and pointer access to its button");
-      assert.equal(await js("Boolean(document.querySelector('[role=tooltip]'))"), true, "Tooltip stays visible while hovered");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    for (let sample = 0; sample < 3; sample++) {
+      assert.deepEqual(await js(readLayout), before, "Hovering Appearance must not change theme or layout");
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
     await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
-    await wait(() => js("document.querySelector('[role=tooltip]') === null"));
-    assert.deepEqual(await js(readLayout), before, "Dismissing the tooltip must not change the theme or layout");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-settings.png`));
+    }
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+  };
+  const checkAiConnections = async () => {
+    const setModel = async (value) => {
+      await js(`(() => {
+        const input = document.querySelectorAll('.ai-connections input')[1];
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await wait(() => js(`document.querySelectorAll('.ai-connections input')[1].value === ${JSON.stringify(value)}`));
+    };
+    const workiqLocked = () => js("document.querySelector('.workiq-connections fieldset').disabled");
+    assert.equal(await workiqLocked(), true);
+    await click("Test AI access");
+    await wait(() => js("Boolean(document.querySelector('.ai-connections .connection-success'))"));
+    assert.equal(await workiqLocked(), false);
+    assert.equal(await js("document.querySelector('.connection-response').textContent.includes('MCAPS_AI_OK')"), true);
+    await click("Test Work IQ access");
+    await wait(() => js("Boolean(document.querySelector('.workiq-connections .connection-success'))"));
+    await setModel("fail-test");
+    await wait(workiqLocked);
+    await click("Test AI access");
+    await wait(() => js("Boolean(document.querySelector('.ai-connections .connection-error'))"));
+    assert.equal(await workiqLocked(), true, "Failed AI retest invalidates Work IQ");
+    await setModel("slow-test");
+    await click("Test AI access");
+    await wait(() => js("document.body.innerText.includes('Calling the LLM')"));
+    await click("Stop connection test");
+    await wait(() => js("Boolean(document.querySelector('.connection-cancelled'))"));
+    assert.equal(await workiqLocked(), true, "Cancelled tests cannot unlock Work IQ");
+    await setModel("");
+    await click("Test AI access");
+    await wait(() => js("Boolean(document.querySelector('.ai-connections .connection-success'))"));
   };
   const checkPortfolioCards = async () => {
     await wait(() => js("document.querySelectorAll('.territory-account-group').length === 2"));
@@ -298,6 +349,26 @@ if (!process.versions.electron) {
     await click("Close");
   };
   app.whenReady().then(async () => {
+    const { AiService, ConnectionError } = require(join(root, "dist-main", "main", "ai-service.js"));
+    let aiPreferences = null;
+    const aiService = new AiService({
+      get: () => aiPreferences,
+      put: (_kind, _id, value) => { aiPreferences = value; },
+      delete: () => { aiPreferences = null; },
+    }, {
+      ai: async (config, signal) => {
+        if (config.model === "fail-test") throw new ConnectionError("Synthetic provider refusal.");
+        if (config.model === "slow-test") await new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        return { response: "MCAPS_AI_OK_SYNTHETIC", identity: "demo-login", details: "Synthetic UI fixture; actual calls are tested separately." };
+      },
+      workiq: async () => ({ response: "MCAPS_WORKIQ_OK_SYNTHETIC", identity: null, details: "Synthetic UI fixture." }),
+    });
+    ipcMain.handle(IPC.aiConnections, () => aiService.getState());
+    ipcMain.handle(IPC.aiTest, (_event, config) => aiService.testAi(config));
+    ipcMain.handle(IPC.workiqTest, (_event, config) => aiService.testWorkiq(config));
+    ipcMain.handle(IPC.aiCancel, () => aiService.cancel());
     const bootstrap = () => {
       const settings = defaultSettings();
       settings.privacyAccepted = privacyAccepted;
@@ -373,7 +444,8 @@ if (!process.versions.electron) {
         monthlyUse: 1000, monthlyUseFormatted: "$1,000", url: "https://example.invalid/milestone",
       })),
     }));
-    ipcMain.handle(IPC.resetSetup, () => {
+    ipcMain.handle(IPC.resetSetup, async () => {
+      await aiService.reset();
       resetCalls++;
       signedIn = false;
       configured = false;
@@ -479,17 +551,21 @@ if (!process.versions.electron) {
       "Grouped freshness metric preserves its account filtering");
     await click("Close");
     window.webContents.debugger.attach("1.3");
-    await hoverThemeToggle();
+    await checkSettingsLayout();
     const theme = await js("document.documentElement.dataset.theme");
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
       await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}.png`));
     }
-    await js("document.querySelector('.theme-toggle').click()");
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.appearance-settings input'))"));
+    await js(`document.querySelector('.appearance-settings input[value="${theme === "light" ? "dark" : "light"}"]').click()`);
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
     await checkPortfolioCards();
     await checkOwnerScrolling();
     await checkAllChangesSpacing();
-    await hoverThemeToggle();
+    await checkSettingsLayout();
     window.webContents.debugger.detach();
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
       await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT);
@@ -497,6 +573,7 @@ if (!process.versions.electron) {
     await click("Settings");
     await wait(() => js("Boolean(document.querySelector('.updates-panel'))"));
     await wait(() => js("document.querySelector('.settings-profile').innerText.includes('Demo role')"));
+    await checkAiConnections();
     assert.equal(await js("document.body.innerText.includes('Connect Microsoft 365 profile')"), false);
     const refreshesBefore = profileRefreshes;
     await click("Refresh MSX profile");
@@ -539,7 +616,7 @@ if (!process.versions.electron) {
     await wait(() => js("Boolean(document.querySelector('.app-shell'))"));
     assert.equal(await js("document.querySelector('.sidebar-profile').innerText.includes('Demo role')"), true);
     assert.equal(territoryRefreshes, 1, "Legacy territory metadata is loaded once and reused across workspace navigation");
-    console.log("MCAPS UI smoke passed: selectable MSX territory groups, page-only Owners scrolling and contained filters at three widths in both themes, three KPI cards, non-overlapping currency values, stable theme hover, MSX profiles, aligned dates, updates/dirty guards, retained-data Reset, and territory-import onboarding.");
+    console.log("MCAPS UI smoke passed: AI/Work IQ test results, dependency gate, failed retest and cancellation, Settings-only theme controls, full-width cards and non-overlapping details at three widths in both themes; existing portfolio, changes, scrolling, onboarding, reset and updates.");
     window.destroy();
     app.exit(0);
   }).catch((error) => {

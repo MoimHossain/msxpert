@@ -1,10 +1,9 @@
 import { classNames } from "../../lib/format";
 import { useNavigation } from "../../state/NavigationProvider";
-import { useTheme } from "../../state/ThemeProvider";
-import { Avatar, Button, Tooltip } from "@fluentui/react-components";
+import { Avatar, Button } from "@fluentui/react-components";
 import {
   ArrowTrendingLines24Regular, Grid24Regular, History24Regular,
-  People24Regular, Settings24Regular, WeatherMoon24Regular, WeatherSunny24Regular,
+  People24Regular, Settings24Regular,
 } from "@fluentui/react-icons";
 import { BrandMark } from "./BrandMark";
 import type { UserProfile } from "../../../shared/types";
@@ -36,7 +35,6 @@ const icons = {
 
 export function Sidebar({ entries, identityName, identityUsername, profile }: SidebarProps) {
   const { route, navigate } = useNavigation();
-  const { theme, toggleTheme } = useTheme();
   const activeName = route.name === "account" ? "portfolio" : route.name;
 
   return (
@@ -78,15 +76,6 @@ export function Sidebar({ entries, identityName, identityUsername, profile }: Si
           >
             Settings
           </Button>
-          <Tooltip content={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} relationship="label">
-            <Button
-              appearance="subtle"
-              className="theme-toggle"
-              icon={theme === "dark" ? <WeatherSunny24Regular /> : <WeatherMoon24Regular />}
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-              onClick={toggleTheme}
-            />
-          </Tooltip>
         </div>
         <div className="sidebar-profile">
           <Avatar name={profile?.displayName ?? identityName ?? identityUsername ?? "User"} color="colorful" size={36}

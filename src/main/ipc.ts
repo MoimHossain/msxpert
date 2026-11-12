@@ -6,6 +6,8 @@ import { MSX_ORIGIN, type MsxClient } from "./msx-client";
 import type { PortfolioService } from "./portfolio-service";
 import { IPC } from "../shared/ipc";
 import type { OperationGate } from "./operation-gate";
+import type { AiService } from "./ai-service";
+import { aiConfigurationSchema, workiqConfigurationSchema } from "../shared/ai";
 
 const idSchema = z.string().min(1).max(200);
 const nullableText = z.string().max(4000).nullable();
@@ -79,6 +81,7 @@ export function registerIpc(
   dataPath: string,
   gate: OperationGate,
   isTrusted: (event: IpcMainInvokeEvent) => boolean,
+  ai: AiService,
 ): void {
   function handle(channel: string, handler: (input: unknown) => unknown): void {
     ipcMain.handle(channel, (event, input: unknown) => {
@@ -95,12 +98,17 @@ export function registerIpc(
     handle(channel, (input) => handler(schema.parse(input)));
   }
   handle(IPC.bootstrap, () => service.bootstrap(dataPath));
+  handle(IPC.aiConnections, () => ai.getState());
+  register(IPC.aiTest, aiConfigurationSchema, (config) => ai.testAi(config));
+  register(IPC.workiqTest, workiqConfigurationSchema, (config) => ai.testWorkiq(config));
+  handle(IPC.aiCancel, () => ai.cancel());
   ipcMain.handle(IPC.resetSetup, async (event) => {
     if (!isTrusted(event)) throw new Error("Untrusted application request.");
     if (!gate.tryLock("Setup is being reset. Wait for the first-run screen.")) {
       throw new Error("Finish active work or updates before resetting setup.");
     }
     try {
+      await ai.reset();
       return await service.resetSetup(dataPath);
     } finally {
       gate.unlock();
@@ -111,6 +119,7 @@ export function registerIpc(
     return auth.getState(await msx.getMyUserId());
   });
   handle(IPC.signOut, async () => {
+    await ai.disconnect();
     const state = await auth.signOut();
     service.profiles.clear();
     service.territoryImport.clear();

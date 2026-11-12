@@ -11,6 +11,8 @@ import { createUpdateRuntime } from "./update-runtime";
 import type { UpdateService } from "./update-service";
 import { APP_NAME, LEGACY_APP_NAME } from "../shared/branding";
 import { loadConnectionConfig } from "./connection-config";
+import { AiService } from "./ai-service";
+import { connectionRunners } from "./ai-runtime";
 
 // Keep the Chromium profile as well as the encrypted vault across the rename.
 const userDataPath = join(app.getPath("appData"), LEGACY_APP_NAME);
@@ -24,6 +26,8 @@ if (!singleInstance) app.quit();
 let mainWindow: BrowserWindow | null = null;
 let store: VaultStore | null = null;
 let updates: UpdateService | null = null;
+let ai: AiService | null = null;
+let stoppingAi = false;
 
 function isTrustedRequest(event: IpcMainInvokeEvent): boolean {
   return Boolean(mainWindow && event.sender === mainWindow.webContents &&
@@ -104,7 +108,8 @@ if (singleInstance) {
     const msx = new MsxClient(auth);
     const portfolio = new PortfolioService(store, auth, msx, app.getVersion());
     const gate = new OperationGate();
-    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest);
+    ai = new AiService(store, connectionRunners);
+    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai);
     updates = createUpdateRuntime(dataPath, gate, () => mainWindow, isTrustedRequest);
     await createWindow();
   }).catch((error: unknown) => {
@@ -112,7 +117,18 @@ if (singleInstance) {
     app.quit();
   });
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (ai?.busy) {
+      event.preventDefault();
+      if (!stoppingAi) {
+        stoppingAi = true;
+        void ai.disconnect().then(() => app.quit()).catch(() => {
+          console.error("AI_SHUTDOWN_FAILED");
+          stoppingAi = false;
+        });
+      }
+      return;
+    }
     updates?.dispose();
     store?.close();
     store = null;

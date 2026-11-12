@@ -351,11 +351,6 @@ a,
   position: relative;
 }
 
-.theme-toggle.fui-Button {
-  min-width: 36px;
-  color: var(--color-text-secondary);
-}
-
 .sidebar-profile {
   display: flex;
   align-items: center;
@@ -1755,9 +1750,14 @@ button.stat-metric:hover,
 
 .fact-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 12px 20px;
   margin: 0;
+}
+
+.fact-row {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .fact-row dt {
@@ -2026,7 +2026,9 @@ button.stat-metric:hover,
   border-radius: var(--radius-lg);
   padding: 26px;
   margin-bottom: 16px;
-  max-width: 900px;
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   box-shadow: var(--shadow-sm);
 }
 
@@ -2086,7 +2088,63 @@ button.stat-metric:hover,
 
 .settings-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.settings-page {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-profile > div {
+  min-width: 0;
+}
+
+.connection-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.connection-fields .field,
+.connection-fields .fui-Input,
+.connection-fields input,
+.settings-section fieldset {
+  min-width: 0;
+}
+
+.connection-fields .fui-Input {
+  width: 100%;
+}
+
+.connection-outcome {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.connection-success {
+  border-color: var(--color-brand);
+  background: var(--color-info-bg);
+}
+
+.connection-response {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+}
+
+.connection-stop {
+  margin-top: 12px;
+}
+
+.ai-connections > .field-hint:last-child,
+.workiq-connections > .field-hint:last-child {
+  margin-top: 12px;
 }
 
 fieldset {

@@ -31,6 +31,10 @@ const IPC = {
   signOut: "auth:sign-out",
   getSettings: "settings:get",
   updateSettings: "settings:update",
+  aiConnections: "ai:connections",
+  aiTest: "ai:test",
+  workiqTest: "ai:workiq-test",
+  aiCancel: "ai:cancel",
   listTerritories: "territories:list",
   previewTerritoryImport: "territories:preview",
   importTerritories: "territories:import",
@@ -56,6 +60,10 @@ const IPC = {
 } as const;
 
 const api: DesktopApi = {
+  getAiConnections: () => ipcRenderer.invoke(IPC.aiConnections),
+  testAiAccess: (config) => ipcRenderer.invoke(IPC.aiTest, config),
+  testWorkiqAccess: (config) => ipcRenderer.invoke(IPC.workiqTest, config),
+  cancelAiTest: () => ipcRenderer.invoke(IPC.aiCancel),
   getUpdateState: () => ipcRenderer.invoke(IPC.updateState),
   checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck),
   downloadAndRestart: (version) => ipcRenderer.invoke(IPC.updateDownload, version),

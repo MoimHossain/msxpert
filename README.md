@@ -39,6 +39,37 @@ The read-only preview shows territory/top-parent/already-present counts and unre
 
 Live verification did not import customer data, reset a real profile, or change permissions. A full interactive login in the rebuilt application still requires validation in the target tenant; unit/renderer tests use synthetic data.
 
+### Appearance and optional AI connections
+
+Theme controls are in **Settings > Appearance**, not beside the navigation link.
+
+**Settings > AI / LLM access > Test AI access** saves the optional runtime/model
+configuration and sends a real synthetic prompt through the official GitHub
+Copilot SDK. The default is a bundled compatible runtime using the official
+client's existing login. A custom trusted `.exe` path and permitted model ID are
+optional. If authentication is missing, sign in with the official Copilot CLI
+and retry. No API key, new Entra app registration, Graph scope, or change to MSX
+sign-in is introduced.
+
+A successful LLM response enables **Work IQ access**. Its test launches the
+existing official **local** Work IQ MCP installation and sends a fixed synthetic
+question, rather than treating a local handshake as proof of service access.
+Leave the path blank to detect an existing npm/Windows installation, or select
+its trusted executable, npm shim, or official `bin\workiq.js`. The test uses that
+client's own Microsoft identity, consent and billing. It does not install Work
+IQ, accept its license, retrieve workplace content, or verify organizational
+search permissions. Remote-only MCP/Cowork browser sessions are not connected by
+this initial integration; no tokens are copied from other applications.
+
+Both buttons make actual service calls and may consume provider allowances.
+Only fixed synthetic content is sent; no account, profile, or milestone data is
+included. Tests can be stopped and time out with retry guidance. Configuration
+is encrypted in the app vault; success is session-only and must be retested after
+restart. Retesting/changing AI settings invalidates the dependent Work IQ state.
+Reset clears app-owned AI configuration/results, not the official clients'
+global logins. Runtime-owned synthetic diagnostics may follow those clients'
+retention policies.
+
 ## Security model
 
 - Uses the system browser for Microsoft authentication.
@@ -47,7 +78,7 @@ Live verification did not import customer data, reset a real profile, or change 
 - Encrypts every sensitive SQLite payload with AES-256-GCM.
 - Protects the encryption key and MSAL cache with Windows DPAPI through Electron `safeStorage`.
 - Runs the renderer with Node integration disabled, context isolation enabled, and a narrow typed preload API.
-- Does not require GitHub Copilot or a separately installed `msx-cli`.
+- Baseline MSX features do not require GitHub Copilot or a separately installed `msx-cli`; optional AI requires the user's authorized Copilot access.
 
 ## Development
 
@@ -87,3 +118,10 @@ Installed signed builds offer **Settings > Updates > Check for updates**, follow
 For release infrastructure, publishing gates, and recovery instructions, see [Signing and releasing](prds/SIGNING.md). Existing installations without the updater need one manual upgrade to an updater-enabled release.
 
 After building, run `npm run test:updates:smoke` to exercise the actual Electron preload/renderer update UI with mocked release responses. A real signed N-to-N+1 installation test is still required before publishing.
+
+**Opt-in live AI validation:** after building, `npm run test:ai:live` exercises
+both Settings test buttons with actual providers, a fresh isolated app vault,
+and synthetic MSX fixtures. It uses existing official-client credentials and
+may consume allowance; it is deliberately not part of `npm test`. Set
+`MCAPS_AI_SMOKE_APP` to an unpacked build's `resources\app.asar` to validate the
+packaged preload, renderer, SDK and native assets without opening real app data.

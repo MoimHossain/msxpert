@@ -362,6 +362,10 @@ export interface BootstrapState {
 }
 
 export interface DesktopApi {
+  getAiConnections(): Promise<import("./ai").AiConnectionsState>;
+  testAiAccess(config: import("./ai").AiConfiguration): Promise<import("./ai").AiConnectionsState>;
+  testWorkiqAccess(config: import("./ai").WorkiqConfiguration): Promise<import("./ai").AiConnectionsState>;
+  cancelAiTest(): Promise<void>;
   getUpdateState(): Promise<import("./updates").UpdateState>;
   checkForUpdates(): Promise<import("./updates").UpdateState>;
   downloadAndRestart(version: string): Promise<void>;

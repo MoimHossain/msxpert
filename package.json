@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:updates:smoke": "node scripts/smoke-updates.cjs",
+    "test:ai:live": "node scripts/smoke-ai.cjs",
     "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release-artifacts.ps1",
     "package": "npm run clean:release && npm run build && electron-builder --win nsis --publish never && npm run prepare:updates",
     "package:signed": "npm run clean:release && npm run build && electron-builder --config electron-builder.signed.cjs --win nsis --publish never && npm run prepare:updates",
@@ -28,6 +29,8 @@
   },
   "dependencies": {
     "@azure/msal-node": "5.5.0",
+    "@github/copilot-sdk": "1.0.31",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "electron-updater": "6.8.11",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -72,6 +75,9 @@
       }
     ],
     "asar": true,
+    "asarUnpack": [
+      "node_modules/@github/copilot-sdk-*/**/*"
+    ],
     "publish": {
       "provider": "github",
       "owner": "MoimHossain",

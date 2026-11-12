@@ -12,12 +12,16 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ArrowReset24Regular } from "@fluentui/react-icons";
 import { Avatar } from "@fluentui/react-components";
 import { ErrorBanner } from "../ui/ErrorBanner";
+import { AiConnectionsPanel } from "./AiConnectionsPanel";
+import { useTheme } from "../../state/ThemeProvider";
+import { Radio, RadioGroup } from "@fluentui/react-components";
 
 export function SettingsView() {
   const { auth, profile, settings, dataPath, version, overview } = useLoadedAppData();
   const { saveSettings, signOut, resetSetup, profileError, refreshProfile } = useAppData();
   const { navigate } = useNavigation();
   const { notify } = useToast();
+  const { theme, toggleTheme } = useTheme();
 
   const [signingOut, setSigningOut] = useState(false);
   const [refreshingProfile, setRefreshingProfile] = useState(false);
@@ -55,8 +59,20 @@ export function SettingsView() {
   };
 
   return (
-    <div>
-      <PageHeader title="Settings" subtitle="Identity, scope, and local data for this device." />
+    <div className="settings-page">
+      <PageHeader title="Settings" subtitle="Identity, appearance, AI connections, and local data for this device." />
+
+      <section className="settings-section appearance-settings" aria-labelledby="appearance-heading">
+        <h2 id="appearance-heading">Appearance</h2>
+        <p>Choose the theme for this device.</p>
+        <RadioGroup aria-label="Color theme" layout="horizontal" value={theme}
+          onChange={(_event, data) => { if (data.value !== theme) toggleTheme(); }}>
+          <Radio value="light" label="Light" />
+          <Radio value="dark" label="Dark" />
+        </RadioGroup>
+      </section>
+
+      <AiConnectionsPanel />
 
       <section className="settings-section">
         <h2>Identity</h2>
