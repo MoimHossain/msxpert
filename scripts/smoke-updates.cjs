@@ -1268,6 +1268,7 @@ if (!process.versions.electron) {
     })()`), true, "Settings and profile stay anchored at the bottom of the rail");
     await checkPortfolioCards();
     await checkAllChangesSpacing();
+    window.webContents.debugger.attach("1.3");
     await checkHistoryExperience();
     await checkLiveFetch();
     await clickMetric("Accounts");
@@ -1286,7 +1287,6 @@ if (!process.versions.electron) {
       "Grouped freshness metric preserves its account filtering");
     await click("Close");
     await checkWorkspaceFeatures();
-    window.webContents.debugger.attach("1.3");
     await checkMilestoneWorkspace();
     await checkCollapsedSidebar();
     await checkSettingsLayout();
