@@ -24,6 +24,8 @@ export function milestoneSummary(milestone: NormalizedMilestone): MilestoneSumma
     commitment: milestone.commitment,
     monthlyUse: milestone.monthlyUse,
     ownerName: milestone.ownerName,
+    createdByName: milestone.createdByName ?? null,
+    monthlyUseFormatted: milestone.monthlyUseFormatted,
     accountName: milestone.accountName,
     url: milestone.url,
   };

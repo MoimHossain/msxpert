@@ -9,6 +9,7 @@ import { MsxClient } from "./msx-client";
 import { PortfolioService } from "./portfolio-service";
 import { VaultStore } from "./storage/vault";
 import { milestone } from "../../tests/milestone-fixture";
+import type { FetchProgress } from "../shared/fetch";
 
 vi.mock("electron", () => ({
   safeStorage: {
@@ -87,7 +88,7 @@ describe("data-preserving setup reset", () => {
     const state = await service.bootstrap(directory);
     expect(state.settings).toMatchObject({ teamEnabled: false, podsEnabled: true });
     if (kind === "legacy") {
-      expect(state.settings).toMatchObject({ privacyAccepted: true, retentionSnapshots: 7, onboardingComplete: true });
+      expect(state.settings).toMatchObject({ privacyAccepted: true, retentionSnapshots: 0, onboardingComplete: true });
     }
   });
 
@@ -242,5 +243,41 @@ describe("data-preserving setup reset", () => {
     expect(service.getOverview().accounts[0]?.territory).toEqual(territory);
     await service.fetchAccounts();
     expect(service.getOverview().accounts[0]?.territory).toBeNull();
+  });
+
+  it("streams only the active account and real counts, continuing after a failed account", async () => {
+    store.put("portfolio-account", "second", { ...account, id: "second", name: "Z second customer" });
+    vi.spyOn(msx, "resolveAccountTree").mockRejectedValueOnce(new Error("Synthetic offline")).mockResolvedValue(tree);
+    vi.spyOn(msx, "fetchMilestones").mockImplementation(async (_scope, _ids, progress) => {
+      progress?.({ milestones: 1, pages: 1 });
+      return [milestone()];
+    });
+    const events: FetchProgress[] = [];
+    const result = await service.fetchAccounts(undefined, progress => events.push(progress));
+    expect(result.ok).toBe(false);
+    expect(result.accounts.map(row => row.ok)).toEqual([false, true]);
+    expect(events.every(progress => progress.accounts.filter(row =>
+      ["tree", "milestones", "explaining", "saving"].includes(row.stage)).length <= 1)).toBe(true);
+    expect(events.some(progress => progress.accounts.some(row => row.accountId === "second" && row.milestones === 1 && row.pages === 1))).toBe(true);
+    expect(service.getFetchProgress()).toMatchObject({ running: false, completed: 2, total: 2,
+      accounts: [{ stage: "failed", error: "Synthetic offline" }, { stage: "complete", milestones: 1 }] });
+  });
+
+  it("retains every snapshot and immutable run ID even with legacy retention and a frozen clock", async () => {
+    store.delete(`changes:${account.id}`, account.createdAt);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    vi.spyOn(msx, "resolveAccountTree").mockResolvedValue(tree);
+    const fetch = vi.spyOn(msx, "fetchMilestones");
+    for (let index = 0; index < 9; index++) {
+      fetch.mockResolvedValueOnce([milestone({ name: `Capture ${index}`, versionNumber: String(index + 1) })]);
+      await service.fetchAccounts(account.id);
+    }
+    const runs = service.getAccountState(account.id).runs;
+    expect(new Set(runs.map(run => run.runId)).size).toBe(9);
+    expect(store.listEntries(`snapshots:${account.id}`)).toHaveLength(10);
+    expect(service.history.getRun({ accountId: account.id, runId: runs.at(-1)!.runId }).milestones?.[0]?.name).toBe("Capture 0");
+    service.markReviewed(account.id);
+    expect(service.history.getRun({ accountId: account.id, runId: runs[0]!.runId }).changes.modified).toHaveLength(1);
+    expect(service.getSettings().retentionSnapshots).toBe(0);
   });
 });

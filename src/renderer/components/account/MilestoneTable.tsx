@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Checkbox, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Popover, PopoverSurface, PopoverTrigger } from "@fluentui/react-components";
+import { Checkbox, Popover, PopoverSurface, PopoverTrigger } from "@fluentui/react-components";
 import type { MilestoneRow } from "../../../shared/types";
 import { SORT_KEYS, MAX_EXPORT_ROWS, type MilestoneFilterSeeds, type MilestoneSortKey, type MilestoneViewState } from "../../../shared/milestones";
 import { FACET_LABELS, filterIssue, groupMilestones, initialMilestoneView, orderedMilestones, pageMilestoneRows } from "../../../domain/milestone-view";
@@ -15,10 +15,12 @@ import { COLUMN_KEYS, COLUMN_LABELS, minimumWidth, useMilestoneColumns } from ".
 import { useToast } from "../../state/ToastProvider";
 import { useUpdateBlocker } from "../../state/UpdateProvider";
 import { isSafeExternalUrl } from "../../lib/url";
+import { MsxLink } from "../ui/MsxLink";
 
 interface MilestoneTableProps {
   milestones: MilestoneRow[];
   initialFilters?: MilestoneFilterSeeds;
+  history?: import("../../../shared/history").HistorySelection;
 }
 
 function cellValue(milestone: MilestoneRow, key: MilestoneSortKey) {
@@ -40,23 +42,7 @@ function cellValue(milestone: MilestoneRow, key: MilestoneSortKey) {
   return <span className="milestone-cell-text">{milestone[key] ?? (key === "ownerName" ? "Unassigned" : "-")}</span>;
 }
 
-function MilestoneLink({ url, label, onOpen, onCopy }: {
-  url: string; label: "Milestone" | "Opportunity"; onOpen: (url: string) => Promise<void>;
-  onCopy: (url: string, label: string) => Promise<void>;
-}) {
-  return <Menu openOnContext>
-    <MenuTrigger disableButtonEnhancement>
-      <a href={url} title="Right-click to copy this link" onClick={event => {
-        event.preventDefault(); void onOpen(event.currentTarget.href);
-      }}>{label}</a>
-    </MenuTrigger>
-    <MenuPopover>
-      <MenuList><MenuItem onClick={() => void onCopy(url, label)}>Copy to clipboard</MenuItem></MenuList>
-    </MenuPopover>
-  </Menu>;
-}
-
-export function MilestoneTable({ milestones, initialFilters }: MilestoneTableProps) {
+export function MilestoneTable({ milestones, initialFilters, history }: MilestoneTableProps) {
   const [view, setView] = useState(() => initialMilestoneView(initialFilters));
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(0);
@@ -104,20 +90,13 @@ export function MilestoneTable({ milestones, initialFilters }: MilestoneTablePro
     const walk = (nodes: typeof groups) => nodes.forEach(group => { ids.add(group.id); walk(group.children); });
     walk(groups); setCollapsed(ids);
   };
-  const openLink = async (url: string) => {
-    try { await window.desktop.openExternal(url); }
-    catch (error) { notify(`Could not open link: ${error instanceof Error ? error.message : String(error)}`, "critical"); }
-  };
-  const copyLink = async (url: string, label: string) => {
-    try { await window.desktop.copyMsxLink(url); notify(`${label} link copied.`, "positive"); }
-    catch (error) { notify(`Could not copy ${label.toLowerCase()} link: ${error instanceof Error ? error.message : String(error)}`, "critical"); }
-  };
   const exportExcel = async () => {
     setExporting(true); setExportMessage(null);
     try {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(ordered)));
       const expectedHash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
       const result = await window.desktop.exportMilestones({
+        ...(history ? { history } : {}),
         accountIds: [...new Set(milestones.map(row => row.portfolioAccountId))],
         view, expectedIds: ordered.map(row => row.id), expectedHash,
       });
@@ -228,10 +207,10 @@ export function MilestoneTable({ milestones, initialFilters }: MilestoneTablePro
                 {layout.showActions ? <td>
                   <div className="milestone-row-actions">
                     {isSafeExternalUrl(row.milestone.url) ?
-                      <MilestoneLink url={row.milestone.url} label="Milestone" onOpen={openLink} onCopy={copyLink} /> :
+                      <MsxLink url={row.milestone.url} label="Milestone" /> :
                       <span className="text-muted">No milestone link</span>}
                     {isSafeExternalUrl(row.milestone.opportunityUrl) ?
-                      <MilestoneLink url={row.milestone.opportunityUrl} label="Opportunity" onOpen={openLink} onCopy={copyLink} /> :
+                      <MsxLink url={row.milestone.opportunityUrl} label="Opportunity" /> :
                       <span className="text-muted">No opportunity link</span>}
                     <button type="button" className="link-button" onClick={() => setSelected(row.milestone)}>View</button>
                   </div>

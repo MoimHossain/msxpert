@@ -62,9 +62,12 @@ export async function buildMilestoneWorkbook(
   metadata.addRows([
     ["Setting", "Value"],
     ["Exported at (UTC)", now.toISOString()],
-    ["Source", "Latest saved captures for active portfolio registrations. No MSX refresh was performed."],
+    ["Source", request.history ? `Historical snapshot: ${request.history.runId}. No MSX refresh was performed.` :
+      "Latest saved captures for active portfolio registrations. No MSX refresh was performed."],
     ["Configured capture window", `${dataset.scope.label}: ${dataset.scope.dateFrom} to ${dataset.scope.dateTo}`],
-    ["Capture window note", "Saved records may reflect an earlier scope until refreshed from Portfolio."],
+    ["Capture window note", request.history ? "Original scope at this fetch. Later refreshes do not change this snapshot." :
+      "Saved records may reflect an earlier scope until refreshed from Portfolio."],
+    ["Capture status exclusions", dataset.scope.excludedStatusLabels.join("; ") || "None"],
     ["Privacy", "This unencrypted export is outside the app vault. Handle it under your organization's data policies."],
     ["Sort", `${request.view.sortKey} ${request.view.sortDirection}`],
     ["Grouping", request.view.groupBy.map(key => FACET_LABELS[key]).join(" > ") || "None"],
@@ -92,7 +95,7 @@ export async function buildMilestoneWorkbook(
 export class MilestoneExporter {
   private inFlight: Promise<MilestoneExportResult> | null = null;
   constructor(
-    private readonly load: (accountIds: string[]) => MilestoneDataset,
+    private readonly load: (accountIds: string[], history?: MilestoneExportRequest["history"]) => MilestoneDataset,
     private readonly downloads: () => string,
     private readonly reveal: (path: string) => void,
   ) {}
@@ -114,7 +117,7 @@ export class MilestoneExporter {
   private async perform(request: MilestoneExportRequest): Promise<MilestoneExportResult> {
     const issue = filterIssue(request.view.filters);
     if (issue) throw new Error(issue);
-    const dataset = this.load(request.accountIds);
+    const dataset = this.load(request.accountIds, request.history);
     const rows = orderedMilestones(dataset.milestones, request.view);
     if (rows.length !== request.expectedIds.length || rows.some((row, index) => row.id !== request.expectedIds[index]) ||
       milestoneHash(rows) !== request.expectedHash) {

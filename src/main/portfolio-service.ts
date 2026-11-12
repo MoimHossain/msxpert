@@ -26,6 +26,9 @@ import type { VaultStore } from "./storage/vault";
 import { ProfileService } from "./profile-service";
 import { TerritoryImportService } from "./territory-import-service";
 import type { MilestoneDataset } from "../shared/milestones";
+import type { AccountFetchProgress, FetchProgress } from "../shared/fetch";
+import { enrichMilestones } from "../domain/milestone-view";
+import { HistoryService } from "./history-service";
 
 interface CurrentManifest {
   runId: string;
@@ -91,8 +94,10 @@ function summarizeMilestones(milestones: NormalizedMilestone[]) {
 
 export class PortfolioService {
   private fetchInFlight: Promise<FetchResult> | null = null;
+  private fetchProgress: FetchProgress | null = null;
   readonly profiles: ProfileService;
   readonly territoryImport: TerritoryImportService;
+  readonly history: HistoryService;
 
   constructor(
     private readonly store: VaultStore,
@@ -102,11 +107,12 @@ export class PortfolioService {
   ) {
     this.profiles = new ProfileService(store, auth, msx);
     this.territoryImport = new TerritoryImportService(msx, this, auth);
+    this.history = new HistoryService(store, () => this.listAccounts());
   }
 
   getSettings(): AppSettings {
     const stored = this.store.get<AppSettings>(SETTINGS_KIND, "default");
-    if (stored) return { ...stored, territoryIds: stored.territoryIds ?? [],
+    if (stored) return { ...stored, retentionSnapshots: 0, territoryIds: stored.territoryIds ?? [],
       teamEnabled: stored.teamEnabled ?? false, podsEnabled: stored.podsEnabled ?? true,
       onboardingComplete: stored.onboardingComplete ?? this.listAccounts().length > 0 };
     const defaults = defaultSettings();
@@ -151,11 +157,8 @@ export class PortfolioService {
     for (const account of accounts) {
       const current = this.store.get<NormalizedMilestone[]>(currentKind(account.id), "milestones");
       if (current === null) missingAccountIds.push(account.id);
-      for (const milestone of current ?? []) {
-        if (!milestones.has(milestone.id)) milestones.set(milestone.id, {
-          ...milestone, createdById: milestone.createdById ?? null, createdByName: milestone.createdByName ?? null,
-          portfolioAccountId: account.id, portfolioAccountName: account.name, portfolioTpid: account.tpid,
-        });
+      for (const milestone of enrichMilestones(current ?? [], account)) {
+        if (!milestones.has(milestone.id)) milestones.set(milestone.id, milestone);
       }
     }
     return { milestones: [...milestones.values()], accountIds: accounts.map(account => account.id),
@@ -346,11 +349,13 @@ export class PortfolioService {
     };
   }
 
-  async fetchAccounts(accountId?: string): Promise<FetchResult> {
+  getFetchProgress(): FetchProgress | null { return this.fetchProgress; }
+
+  async fetchAccounts(accountId?: string, onProgress?: (progress: FetchProgress) => void): Promise<FetchResult> {
     if (this.fetchInFlight) {
       throw new Error("A portfolio refresh is already running.");
     }
-    this.fetchInFlight = this.runFetch(accountId);
+    this.fetchInFlight = this.runFetch(accountId, onProgress);
     try {
       return await this.fetchInFlight;
     } finally {
@@ -358,16 +363,30 @@ export class PortfolioService {
     }
   }
 
-  private async runFetch(accountId?: string): Promise<FetchResult> {
+  private async runFetch(accountId?: string, onProgress?: (progress: FetchProgress) => void): Promise<FetchResult> {
     const targets = accountId
       ? this.listAccounts().filter((account) => account.id === accountId)
       : this.listAccounts();
     if (accountId && targets.length === 0) throw new Error("Account not found.");
 
     const results: FetchResult["accounts"] = [];
+    this.fetchProgress = {
+      id: randomUUID(), startedAt: new Date().toISOString(), finishedAt: null, running: true,
+      completed: 0, total: targets.length,
+      accounts: targets.map(account => ({ accountId: account.id, name: account.name, stage: "queued",
+        accountRecords: 0, milestones: 0, pages: 0, changes: null, error: null })),
+    };
+    const publish = () => { if (this.fetchProgress) onProgress?.(this.fetchProgress); };
+    const update = (accountId: string, patch: Partial<AccountFetchProgress>) => {
+      if (!this.fetchProgress) return;
+      this.fetchProgress = { ...this.fetchProgress, completed: results.length,
+        accounts: this.fetchProgress.accounts.map(row => row.accountId === accountId ? { ...row, ...patch } : row) };
+      publish();
+    };
+    publish();
     for (const account of targets) {
       try {
-        const document = await this.ingestAccount(account);
+        const document = await this.ingestAccount(account, patch => update(account.id, patch));
         results.push({
           accountId: account.id,
           name: account.name,
@@ -376,6 +395,8 @@ export class PortfolioService {
           baseline: document.baseline,
           counts: document.counts,
         });
+        update(account.id, { stage: "complete", milestones: document.counts.total,
+          changes: document.counts.added + document.counts.modified + document.counts.unwatchedOnly + document.counts.disappeared });
       } catch (error) {
         results.push({
           accountId: account.id,
@@ -383,22 +404,29 @@ export class PortfolioService {
           ok: false,
           error: error instanceof Error ? error.message : String(error),
         });
+        update(account.id, { stage: "failed", error: error instanceof Error ? error.message : String(error) });
       }
     }
+    this.fetchProgress = { ...this.fetchProgress, running: false, finishedAt: new Date().toISOString(), completed: results.length };
+    publish();
     return { ok: results.every((result) => result.ok), accounts: results };
   }
 
-  private async ingestAccount(account: PortfolioAccount): Promise<ChangeDocument> {
+  private async ingestAccount(account: PortfolioAccount, report?: (patch: Partial<AccountFetchProgress>) => void): Promise<ChangeDocument> {
     const started = Date.now();
-    const id = runId();
+    const latestTime = Date.parse(this.runs(account.id)[0]?.runId ?? "");
+    const id = runId(new Date(Math.max(started, Number.isFinite(latestTime) ? latestTime + 1 : started)));
     try {
       const settings = this.getSettings();
+      report?.({ stage: "tree" });
       const tree = await this.msx.resolveAccountTree(account.tpid);
       const top = tree.find((record) => record.id.toLowerCase() === account.msxAccountId.toLowerCase());
       if (top?.territory !== undefined) account.territory = top.territory;
+      report?.({ stage: "milestones", accountRecords: tree.length });
       const milestones = await this.msx.fetchMilestones(
         settings.scope,
         tree.map((record) => record.id),
+        progress => report?.(progress),
       );
       const previous = this.store.get<NormalizedMilestone[]>(
         currentKind(account.id),
@@ -410,6 +438,7 @@ export class PortfolioService {
         : diffSnapshots(previous, milestones, WATCHED_FIELDS);
 
       if (changes.disappeared.length) {
+        report?.({ stage: "explaining" });
         const reasons = await this.msx.explainDisappearances(
           settings.scope,
           changes.disappeared.map((milestone) => milestone.id),
@@ -465,6 +494,7 @@ export class PortfolioService {
         counts: document.counts,
       };
 
+      report?.({ stage: "saving", milestones: milestones.length });
       this.store.transaction(() => {
         const active = this.store.get<PortfolioAccount>(ACCOUNT_KIND, account.id);
         if (active && account.territory !== undefined) this.store.put(ACCOUNT_KIND, account.id, { ...active, territory: account.territory });
@@ -475,7 +505,6 @@ export class PortfolioService {
         this.store.put(currentKind(account.id), "manifest", manifest);
         this.store.put(runsKind(account.id), id, run);
       });
-      this.pruneSnapshots(account.id, settings.retentionSnapshots);
       return document;
     } catch (error) {
       const run: RunEntry = {
@@ -487,24 +516,6 @@ export class PortfolioService {
       };
       this.store.put(runsKind(account.id), id, run);
       throw error;
-    }
-  }
-
-  private pruneSnapshots(accountId: string, keep: number): void {
-    const entries = this.store.listEntries(snapshotsKind(accountId));
-    if (entries.length <= keep) return;
-    const ids = entries.map((entry) => entry.id).sort();
-    const retained = new Set(ids.slice(-keep));
-    const months = new Set<string>();
-    for (const id of ids) {
-      const month = id.slice(0, 7);
-      if (!months.has(month)) {
-        months.add(month);
-        retained.add(id);
-      }
-    }
-    for (const id of ids) {
-      if (!retained.has(id)) this.store.delete(snapshotsKind(accountId), id);
     }
   }
 

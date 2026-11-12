@@ -127,6 +127,38 @@ open in the default browser, and **View** for local details. Right-click either
 link (or focus it and press Shift+F10) for **Copy to clipboard**. Missing links
 are unavailable; clipboard and browser-opening failures are shown explicitly.
 
+## Fetch progress, changes, and history
+
+Account dashboards group delivery/commitment counts into one card, alongside a
+compact account overview; every metric still opens its underlying milestones.
+Change cards show status, commitment, source-formatted monthly use, owner, date
+and creator, with labeled before/after values, edit counts and numeric deltas.
+Long comments expand in place. Disappeared records retain the live MSX reason
+and old/current differences; an inaccessible record is not called deleted.
+Search and type/owner/field filters update the accompanying insight counts.
+
+**Fetch all** and **Fetch now** open a right-anchored progress panel showing the
+active account, real milestone/page counts, encrypted save stages and per-account
+failures. Only the currently fetched account has a horizontal activity bar;
+unknown network totals remain indeterminate rather than showing invented
+percentages. Closing the panel does not cancel fetching. The progress button
+reopens it, and progress/busy state survives navigation and renderer reload.
+
+**Account > History** includes successful captures and failed attempts. Inspect
+a successful fetch using **Oldest / Previous / Next / Latest**. Its read-only
+drawer shows that fetch's changes, original scope, full captured milestone grid,
+details and filtered Excel export from the historical snapshot, not today's
+records. The workbook identifies the source run. Baselines are explicitly not
+change events. **All Changes > History timeline** browses UTC days with recorded
+events, including reviewed changes, with account/owner/type/field/text filters
+and links into the same fetch explorer.
+
+All new snapshots, changes and run records are retained in the encrypted vault,
+without automatic pruning. The legacy retention setting migrates to keep-all.
+Mark reviewed only advances the review watermark. History grows with use;
+older snapshots already pruned cannot be recovered, and the explorer explicitly
+reports unavailable snapshots while preserving their change documents.
+
 ## Security model
 
 - Uses the system browser for Microsoft authentication.

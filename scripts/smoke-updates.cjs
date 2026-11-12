@@ -10,7 +10,7 @@ if (!process.versions.electron) {
   delete env.ELECTRON_RUN_AS_NODE;
   try {
     const result = spawnSync(require("electron"), [__filename], {
-      env, stdio: "inherit", timeout: 60000, windowsHide: true,
+      env, stdio: "inherit", timeout: 120000, windowsHide: true,
     });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;
@@ -46,6 +46,10 @@ if (!process.versions.electron) {
   const openedMilestoneLinks = [];
   const copiedMilestoneLinks = [];
   let failMilestoneCopy = false;
+  let pauseNextFetch = false;
+  let resumeFetch = null;
+  let failNextAccount = false;
+  let lastHistorySelection = null;
   const demoMilestones = (account) => Array.from({ length: 60 }, (_, index) => ({
     id: `milestone-${account.id}-${index}`, name: `Demo migration ${String(index).padStart(2, "0")} with a long milestone name to resize${index === 0 ? " and additional migration details".repeat(12) : ""}`,
     number: `DEMO-${index}`, date: index < 30 ? "2027-01-15" : "2027-02-15",
@@ -98,6 +102,7 @@ if (!process.versions.electron) {
   };
   const js = (source) => window.webContents.executeJavaScript(source);
   const screenshot = async (path) => {
+    await new Promise(resolve => setTimeout(resolve, 200));
     await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
     const image = await new Promise((resolve) => {
       const paint = (_event, _dirty, frame) => {
@@ -129,7 +134,7 @@ if (!process.versions.electron) {
   const clickAria = async (label) => {
     assert.equal(await js(`(() => {
       const button = [...document.querySelectorAll('.sidebar button')]
-        .find(button => button.getAttribute('aria-label') === ${JSON.stringify(label)});
+        .find(button => button.getAttribute('aria-label')?.split(',')[0] === ${JSON.stringify(label)});
       if (!button || button.disabled) return false;
       button.click(); return true;
     })()`), true, `Accessible sidebar button: ${label}`);
@@ -722,6 +727,211 @@ if (!process.versions.electron) {
     await click("Portfolio");
     await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
   };
+  const setField = async (label, value, scope = "body") => {
+    assert.ok(await js(`(() => {
+      const field = [...document.querySelector(${JSON.stringify(scope)}).querySelectorAll('.field')]
+        .find(field => field.querySelector('label')?.textContent.trim() === ${JSON.stringify(label)});
+      const control = field?.querySelector('input,select');
+      if (!control) return false;
+      const prototype = control.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(control, ${JSON.stringify(value)});
+      control.dispatchEvent(new Event(control.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+      return true;
+    })()`), `Field ${label}`);
+  };
+  const selectTab = async (label, scope = "body") => {
+    assert.ok(await js(`(() => {
+      const tab = [...document.querySelector(${JSON.stringify(scope)}).querySelectorAll('[role=tab]')]
+        .find(tab => tab.textContent.trim().startsWith(${JSON.stringify(label)}));
+      if (!tab) return false; tab.click(); return true;
+    })()`), `Tab ${label}`);
+  };
+  const clickAccessible = async label => {
+    assert.ok(await js(`(() => {
+      const button = [...document.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === ${JSON.stringify(label)});
+      if (!button || button.disabled) return false; button.click(); return true;
+    })()`), `Accessible button: ${label}`);
+  };
+  const historyMove = async label => {
+    const previous = await js("document.querySelector('.history-run-summary').dataset.runId");
+    await js(`[...document.querySelectorAll('.history-run-navigation button')].find(button => button.textContent.trim() === ${JSON.stringify(label)}).click()`);
+    await wait(() => js(`Boolean(document.querySelector('.history-run-summary')) &&
+      document.querySelector('.history-run-summary').dataset.runId !== ${JSON.stringify(previous)} &&
+      !document.querySelector('.console-side-panel [role=progressbar]')`));
+  };
+  const checkHistoryLayout = async () => {
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        assert.equal(await js(`(() => {
+          const panel = document.querySelector('.console-side-panel');
+          const bounds = panel?.getBoundingClientRect();
+          return document.scrollingElement.scrollWidth <= innerWidth &&
+            (!bounds || (bounds.left >= -1 && bounds.right <= innerWidth + 1)) &&
+            [...document.querySelectorAll('.change-card, .change-insights, .account-summary-grid')]
+              .every(element => element.scrollWidth <= element.clientWidth + 1);
+        })()`), true, `Changes, account summaries and history drawers remain contained at ${width}px`);
+      }
+    } finally { window.setContentSize(...original); await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`)); }
+  };
+  const checkChangeLink = async (keyboard = false) => {
+    await js(`[...document.querySelectorAll('[aria-label="Dismiss notification"]')].forEach(button => button.click())`);
+    const link = await js(`(() => {
+      const link = document.querySelector('.change-card-links a');
+      link.scrollIntoView({block:'center'});
+      link.focus();
+      const rect = link.getBoundingClientRect();
+      return {url: link.href, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2};
+    })()`);
+    const openedBefore = openedMilestoneLinks.length;
+    await js("document.querySelector('.change-card-links a').click()");
+    await wait(() => openedMilestoneLinks.length === openedBefore + 1);
+    assert.equal(openedMilestoneLinks.at(-1), link.url, "Change link opens the original MSX milestone URL");
+    const copiedBefore = copiedMilestoneLinks.length;
+    if (keyboard) {
+      window.webContents.sendInputEvent({ type: "keyDown", keyCode: "F10", modifiers: ["shift"] });
+      window.webContents.sendInputEvent({ type: "keyUp", keyCode: "F10", modifiers: ["shift"] });
+    } else {
+      const point = {x: link.x, y: link.y};
+      await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "right", buttons: 2, clickCount: 1 });
+      await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "right", buttons: 0, clickCount: 1 });
+    }
+    await wait(() => js("[...document.querySelectorAll('[role=menuitem]')].some(item => item.textContent === 'Copy to clipboard')"));
+    await js("[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent === 'Copy to clipboard').click()");
+    await wait(() => copiedMilestoneLinks.length === copiedBefore + 1);
+    assert.equal(copiedMilestoneLinks.at(-1), link.url, "Change context menu copies the original milestone URL");
+    await wait(() => js("document.querySelectorAll('[role=menuitem]').length === 0 && document.body.innerText.includes('MSX link copied.')"));
+  };
+  const checkHistoryExperience = async () => {
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.account-card'))"));
+    await js(`[...document.querySelectorAll('.account-card')].find(card => card.querySelector('h2').textContent === 'Test account').click()`);
+    await wait(() => js("document.querySelectorAll('.account-summary-grid > .stat-group').length === 2"));
+    assert.deepEqual(await js(`[...document.querySelector('.account-summary-grid > .stat-group').querySelectorAll('.stat-label')].map(label => label.textContent)`),
+      ["On track", "At risk", "Blocked", "Committed", "Uncommitted"]);
+    const theme = await js("document.documentElement.dataset.theme");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-account-summary.png`));
+    await selectTab("Changes");
+    await wait(() => js("document.querySelectorAll('.change-card').length >= 4"));
+    assert.equal(await js("document.querySelectorAll('.change-insights strong')[1].textContent"), "4",
+      "Committed milestone insight counts unique milestones, not the same milestone's churn twice");
+    assert.equal(await js(`Boolean(document.querySelector('.change-card-signals .badge, .change-card-signals .fui-Badge')) &&
+      Boolean(document.querySelector('.change-amount')) && document.querySelectorAll('.change-field-row del').length > 3 &&
+      document.querySelectorAll('.change-field-row ins').length > 3 &&
+      document.body.innerText.includes('Status is now Cancelled')`), true, "Change cards expose impact, amounts, context, old/new values and disappearance reasons");
+    await js("document.querySelector('.change-long-value summary').click()");
+    assert.equal(await js("document.querySelector('.change-long-value').open"), true, "Full historical comments can be expanded");
+    await checkChangeLink();
+    await setField("Changed field", "monthlyUse");
+    await wait(() => js("document.querySelectorAll('.change-card').length === 1"));
+    assert.equal(await js("document.querySelector('.change-insights strong').textContent"), "1");
+    await setField("Changed field", "");
+    await checkHistoryLayout();
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-rich-changes.png`));
+    await selectTab("History");
+    await wait(() => js("document.querySelectorAll('.history-tab tbody tr').length >= 3"));
+    await click("Explore latest fetch");
+    await wait(() => js("Boolean(document.querySelector('.history-run-summary'))"));
+    assert.equal(lastHistorySelection.runId, "2026-11-11T08:00:00.000Z");
+    await historyMove("Previous");
+    await wait(() => lastHistorySelection.runId === "2026-11-10T08:00:00.000Z");
+    await historyMove("Next");
+    await wait(() => lastHistorySelection.runId === "2026-11-11T08:00:00.000Z");
+    await historyMove("Oldest");
+    await wait(() => js("Boolean(document.querySelector('.history-baseline'))"));
+    assert.equal(lastHistorySelection.runId, "2026-11-09T08:00:00.000Z");
+    assert.equal(await js(`[...document.querySelectorAll('.history-run-navigation button')].find(button => button.textContent === 'Previous').disabled`), true);
+    await click("Browse captured milestones");
+    await wait(() => js("document.querySelectorAll('.console-side-panel [data-milestone-id]').length === 50"));
+    await setField("Search milestones", "Original Owner", ".console-side-panel");
+    await wait(() => js("document.querySelector('.console-side-panel .milestone-count').textContent.includes('Showing 1 of 60')"));
+    const before = exportedMilestones.length;
+    await click("Export Excel");
+    await wait(() => exportedMilestones.length === before + 1);
+    assert.equal(exportedMilestones.at(-1).rowCount, 1);
+    const ExcelJS = require(join(root, "node_modules", "exceljs"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(exportedMilestones.at(-1).path);
+    const sheet = workbook.getWorksheet("Milestones"), headers = sheet.getRow(1).values;
+    assert.equal(sheet.getCell(2, headers.indexOf("Owner")).value, "Original Owner");
+    assert.equal(sheet.getCell(2, headers.indexOf("Monthly use (source units)")).value, 100,
+      "Historical exports use the selected capture instead of today's milestone values");
+    assert.ok(JSON.stringify(workbook.getWorksheet("View").getSheetValues()).includes("2026-11-09T08:00:00.000Z"));
+    await click("View");
+    await wait(() => js("document.querySelector('.fact-grid')?.textContent.includes('Original Owner')"));
+    await clickAccessible("Close dialog");
+    await historyMove("Latest");
+    await selectTab("Changes in this fetch", ".console-side-panel");
+    await wait(() => js("document.querySelectorAll('.console-side-panel .change-card').length === 4"));
+    await checkChangeLink(true);
+    await checkHistoryLayout();
+    assert.equal(await js(`[...document.querySelectorAll('.history-run-navigation button')].find(button => button.textContent === 'Next').disabled`), true);
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-history-drawer.png`));
+    await clickAccessible("Close Fetch history");
+    await wait(() => js("!document.querySelector('.console-side-panel')"));
+    await selectTab("Changes");
+    await click("Mark reviewed");
+    await wait(() => js("document.body.innerText.includes('No outstanding changes')"));
+    await clickAria("All Changes");
+    await selectTab("History timeline");
+    await wait(() => js("document.querySelectorAll('.history-event').length === 12"));
+    await checkChangeLink();
+    await setField("History changed field", "monthlyUse");
+    await wait(() => js("document.querySelectorAll('.history-event').length === 3"));
+    await setField("History account", "smoke-account");
+    await wait(() => js("document.querySelectorAll('.history-event').length === 1"));
+    assert.equal(await js("document.querySelector('.history-event-context').textContent.includes('Test account')"), true,
+      "The timeline retains events even after their account was marked reviewed");
+    await setField("Search selected day", "Transition Owner");
+    await wait(() => js("document.querySelectorAll('.history-event').length === 1"));
+    await click("Clear history filters");
+    await click("Previous day");
+    await wait(() => js("document.querySelectorAll('.history-event').length === 3"));
+    await click("Next day");
+    await wait(() => js("document.querySelectorAll('.history-event').length === 12"));
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-history-timeline.png`));
+    milestoneStore.delete("watermark:smoke-account", "current");
+    await click("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+  };
+  const checkLiveFetch = async () => {
+    pauseNextFetch = true; failNextAccount = true; resumeFetch = null;
+    await click("Fetch all");
+    await wait(() => resumeFetch !== null);
+    await wait(() => js("Boolean(document.querySelector('.fetch-progress-panel')) && document.querySelectorAll('.account-card-fetching').length === 1"));
+    assert.equal(await js(`(() => {
+      const panel = document.querySelector('.console-side-panel').getBoundingClientRect();
+      return Math.abs(panel.right - innerWidth) < 2 && panel.width <= 560 &&
+        document.querySelectorAll('.account-card [role=progressbar]').length === 1 &&
+        document.querySelectorAll('.account-card .fui-Spinner').length === 0;
+    })()`), true, "Progress drawer is right-anchored and only the active account has a horizontal indicator");
+    await clickAccessible("Close Fetch progress");
+    await wait(() => js("!document.querySelector('.console-side-panel')"));
+    const theme = await js("document.documentElement.dataset.theme");
+    await js(`document.querySelector('.account-card-fetching').scrollIntoView({ block: 'center' });
+      [...document.querySelectorAll('[aria-label="Dismiss notification"]')].forEach(button => button.click())`);
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-active-fetch.png`));
+    assert.equal((await js("window.desktop.getFetchProgress()")).accounts.find(row => row.stage === "milestones").milestones, 20);
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.fetch-progress-panel')) && document.querySelectorAll('.account-card [role=progressbar]').length === 1"));
+    assert.equal((await js("window.desktop.getFetchProgress()")).accounts.find(row => row.stage === "milestones").milestones, 20,
+      "A renderer reload restores the real in-flight account and progress");
+    await clickAccessible("Close Fetch progress");
+    await wait(() => js("!document.querySelector('.console-side-panel')"));
+    console.log("Live fetch passed: right-side progress, active-account-only indicator, real page counts, renderer reload recovery and per-account failure feedback.");
+    await js("document.querySelector('.fetch-progress-reopen').click()");
+    await wait(() => js("Boolean(document.querySelector('.fetch-progress-panel'))"));
+    resumeFetch();
+    await wait(async () => !(await js("window.desktop.getFetchProgress()")).running);
+    await wait(() => js("document.querySelector('.fetch-overall').textContent.includes('Finished with 1 failed')"));
+    assert.equal(await js("document.querySelectorAll('.account-card [role=progressbar]').length"), 0);
+    assert.equal(await js("document.querySelector('.fetch-account-list').textContent.includes('Synthetic account fetch failed.')"), true);
+    await clickAccessible("Close Fetch progress");
+    await wait(() => js("!document.querySelector('.console-side-panel')"));
+  };
   const clickMetric = async (label) => {
     assert.equal(await js(`(() => {
       const metric = [...document.querySelectorAll('button.stat-metric')]
@@ -799,15 +1009,69 @@ if (!process.versions.electron) {
       copiedMilestoneLinks.push(parsed);
     });
     milestoneStore = new VaultStore(join(process.env.CSU_SMOKE_DATA, "milestone-vault"));
-    const milestoneService = new PortfolioService(milestoneStore, {}, {}, "smoke-test");
+    const milestoneService = new PortfolioService(milestoneStore, {}, {
+      resolveAccountTree: async tpid => {
+        const account = demoAccounts.find(row => row.tpid === tpid);
+        if (failNextAccount && account.id === "smoke-account") { failNextAccount = false; throw new Error("Synthetic account fetch failed."); }
+        return [{ id: account.msxAccountId, name: account.name, tpid, country: null, parentingLevel: null, url: "" }];
+      },
+      fetchMilestones: async (_scope, ids, report) => {
+        const account = demoAccounts.find(row => ids.includes(row.msxAccountId));
+        const rows = demoMilestones(account);
+        report?.({ milestones: 20, pages: 1 });
+        if (pauseNextFetch) {
+          pauseNextFetch = false;
+          await new Promise(resolve => { resumeFetch = resolve; });
+        }
+        report?.({ milestones: rows.length, pages: 2 });
+        return rows;
+      },
+      explainDisappearances: async () => new Map(),
+    }, "smoke-test");
+    const { milestoneSummary } = require(join(root, "dist-main", "domain", "diff.js"));
     milestoneStore.put("settings", "default", savedSettings);
     for (const account of demoAccounts) {
       milestoneStore.put("portfolio-account", account.id, account);
       milestoneStore.put(`current:${account.id}`, "milestones", demoMilestones(account));
+      const current = demoMilestones(account);
+      const gone = { ...current[59], id: `gone-${account.id}`, name: "Synthetic milestone closed after scope capture" };
+      const original = [...current.slice(1), gone].map(row => row.id === current[1].id ?
+        { ...row, ownerName: "Original Owner", status: "On Track", date: "2026-10-15", monthlyUse: 100, monthlyUseFormatted: "100" } : row);
+      const intermediate = original.map(row => row.id === current[1].id ?
+        { ...row, ownerName: "Transition Owner", status: "At Risk", date: "2026-12-15", monthlyUse: 200, monthlyUseFormatted: "200" } : row);
+      const ids = ["2026-11-09T08:00:00.000Z", "2026-11-10T08:00:00.000Z", "2026-11-11T08:00:00.000Z"];
+      for (let index = 0; index < ids.length; index++) {
+        const runId = ids[index];
+        const modified = index ? [{ ...milestoneSummary(index === 1 ? intermediate[0] : current[1]), fields: [
+          { field: "status", before: index === 1 ? "On Track" : "At Risk", after: index === 1 ? "At Risk" : "On Track" },
+          { field: "date", before: index === 1 ? "2026-10-15" : "2026-12-15", after: index === 1 ? "2026-12-15" : current[1].date },
+          { field: "ownerName", before: index === 1 ? "Original Owner" : "Transition Owner", after: index === 1 ? "Transition Owner" : current[1].ownerName },
+          { field: "monthlyUse", before: index === 1 ? 100 : 200, after: index === 1 ? 200 : current[1].monthlyUse },
+          { field: "forecastComments", before: "Earlier saved note ".repeat(30), after: current[1].forecastComments },
+        ] }] : [];
+        const added = index === 2 ? [milestoneSummary(current[0])] : [];
+        const disappeared = index === 2 ? [{ ...milestoneSummary(gone), gone: {
+          reason: "status", summary: "Status is now Cancelled, which this view filters out.", causes: ["status"],
+          current: { date: gone.date, status: "Cancelled", statusValue: 861980004, statusReason: "Cancelled",
+            ownerName: gone.ownerName, accountName: gone.accountName, modifiedOn: runId },
+        } }] : [];
+        if (index === 2) modified.push({ ...milestoneSummary(current[3]), fields: [], unwatchedOnly: true });
+        const counts = { added: added.length, modified: index ? 1 : 0, disappeared: disappeared.length,
+          unwatchedOnly: index === 2 ? 1 : 0, total: current.length };
+        const filter = { windowLabel: "FY27 saved scope", dateFrom: "2026-07-01", dateTo: "2027-06-30",
+          excludedStatuses: ["Cancelled"], accountIdCount: 1 };
+        const document = { runId, generatedAt: runId, baseline: index === 0, previousRunId: ids[index - 1] ?? null,
+          account, filter, counts, added, modified, disappeared };
+        milestoneStore.put(`runs:${account.id}`, runId, { runId, at: runId, durationMs: 1250, ok: true, baseline: index === 0, counts });
+        milestoneStore.put(`changes:${account.id}`, runId, document);
+        milestoneStore.put(`snapshots:${account.id}`, runId, { milestones: index === 0 ? original : index === 1 ? intermediate : current, manifest: { filter } });
+      }
+      milestoneStore.put(`current:${account.id}`, "manifest", { runId: ids[2] });
     }
     const downloadPath = join(process.env.CSU_SMOKE_DATA, "Downloads");
     require("node:fs").mkdirSync(downloadPath);
-    const milestoneExporter = new MilestoneExporter(ids => milestoneService.getMilestones(ids), () => downloadPath,
+    const milestoneExporter = new MilestoneExporter((ids, history) => history ? milestoneService.history.getMilestones(history, ids) :
+      milestoneService.getMilestones(ids), () => downloadPath,
       path => { revealedMilestones.push(path); });
     ipcMain.handle(IPC.getMilestones, () => {
       if (milestoneReadFailure) throw new Error("Synthetic saved-data read failed.");
@@ -904,15 +1168,14 @@ if (!process.versions.electron) {
         };
       });
     });
-    ipcMain.handle(IPC.getAccountState, (_event, id) => ({
-      runs: [{ runId: "demo-run", at: "2026-11-11T08:00:00.000Z", durationMs: 1, ok: true, baseline: false }],
-      reviewedThrough: null,
-      since: {
-        added: [{ id: `change-${id}`, name: "Demo migration", accountName: "Test account", ownerName: "Demo Owner", date: "2027-01-15", status: "On Track" }],
-        modified: [], disappeared: [], churn: [], runCount: 1, fromRunId: null, toRunId: "demo-run",
-      },
-      milestones: milestoneService.getMilestones([id]).milestones,
-    }));
+    ipcMain.handle(IPC.getAccountState, (_event, id) => milestoneService.getAccountState(id));
+    ipcMain.handle(IPC.historyRun, (_event, selection) => { lastHistorySelection = selection; return milestoneService.history.getRun(selection); });
+    ipcMain.handle(IPC.historyIndex, () => milestoneService.history.getIndex());
+    ipcMain.handle(IPC.historyDay, (_event, date) => milestoneService.history.getDay(date));
+    ipcMain.handle(IPC.markReviewed, (_event, id) => milestoneService.markReviewed(id));
+    ipcMain.handle(IPC.getFetchProgress, () => milestoneService.getFetchProgress());
+    ipcMain.handle(IPC.fetchAccounts, (_event, id) => milestoneService.fetchAccounts(id,
+      progress => window.webContents.send(IPC.fetchProgress, progress)));
     ipcMain.handle(IPC.resetSetup, async () => {
       await aiService.reset();
       resetCalls++;
@@ -1005,6 +1268,8 @@ if (!process.versions.electron) {
     })()`), true, "Settings and profile stay anchored at the bottom of the rail");
     await checkPortfolioCards();
     await checkAllChangesSpacing();
+    await checkHistoryExperience();
+    await checkLiveFetch();
     await clickMetric("Accounts");
     await wait(() => js("document.querySelector('.metric-drilldown h2')?.textContent === 'Portfolio accounts'"));
     assert.equal(await js("document.querySelectorAll('.metric-drilldown tbody tr').length"), 3);
@@ -1038,6 +1303,8 @@ if (!process.versions.electron) {
     await checkPortfolioCards();
     await checkOwnerScrolling();
     await checkAllChangesSpacing();
+    await checkHistoryExperience();
+    await checkLiveFetch();
     await checkMilestoneWorkspace();
     await checkCollapsedSidebar();
     await checkSettingsLayout();

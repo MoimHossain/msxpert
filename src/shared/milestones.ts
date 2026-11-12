@@ -33,6 +33,7 @@ export interface MilestoneDataset {
 }
 
 export interface MilestoneExportRequest {
+  history?: import("./history").HistorySelection | undefined;
   accountIds: string[];
   view: MilestoneViewState;
   expectedIds: string[];

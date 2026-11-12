@@ -10,8 +10,11 @@ import { EmptyState } from "../ui/EmptyState";
 import { Badge } from "../ui/Badge";
 import { ChangesTab } from "../account/ChangesTab";
 import { formatNumber } from "../../lib/format";
+import { Tabs } from "../ui/Tabs";
+import { HistoryTimeline } from "./HistoryTimeline";
 
 export function AllChangesView() {
+  const [view, setView] = useState("unreviewed");
   const { overview } = useLoadedAppData();
   const { refreshOverview } = useAppData();
   const { goToAccount } = useNavigation();
@@ -73,6 +76,10 @@ export function AllChangesView() {
         }
       />
 
+      <Tabs active={view} onChange={setView} ariaLabel="Change views" tabs={[
+        { id: "unreviewed", label: "Unreviewed changes" }, { id: "history", label: "History timeline" },
+      ]} />
+      {view === "history" ? <HistoryTimeline /> : <>
       {overview.accounts.length === 0 ? (
         <EmptyState
           title="No customers tracked yet"
@@ -143,6 +150,7 @@ export function AllChangesView() {
           </ul>
         </details>
       ) : null}
+      </>}
     </div>
   );
 }

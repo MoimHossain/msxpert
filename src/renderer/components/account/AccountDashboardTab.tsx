@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { MilestoneRow } from "../../../shared/types";
-import { StatCard } from "../ui/StatCard";
+import { StatCard, StatGroup } from "../ui/StatCard";
 import { BreakdownList } from "../ui/BreakdownList";
 import { MilestoneTable } from "./MilestoneTable";
 import { formatCurrency, formatNumber } from "../../lib/format";
@@ -72,14 +72,19 @@ export function AccountDashboardTab({ milestones }: AccountDashboardTabProps) {
 
   return (
     <div>
-      <div className="stat-grid">
-        <StatCard label="On track" value={formatNumber(summary.onTrack)} tone="positive" onClick={() => openDrilldown("onTrack")} active={drilldown === "onTrack"} />
-        <StatCard label="At risk" value={formatNumber(summary.atRisk)} tone="warning" onClick={() => openDrilldown("atRisk")} active={drilldown === "atRisk"} />
-        <StatCard label="Blocked" value={formatNumber(summary.blocked)} tone="critical" onClick={() => openDrilldown("blocked")} active={drilldown === "blocked"} />
-        <StatCard label="Committed" value={formatNumber(summary.committed)} tone="info" onClick={() => openDrilldown("committed")} active={drilldown === "committed"} />
-        <StatCard label="Uncommitted" value={formatNumber(summary.uncommitted)} tone="warning" onClick={() => openDrilldown("uncommitted")} active={drilldown === "uncommitted"} />
-        <StatCard label="Monthly use" value={formatCurrency(summary.monthlyUse)} onClick={() => openDrilldown("all")} active={drilldown === "all"} />
-        <StatCard label="Distinct owners" value={formatNumber(summary.owners)} tone="info" onClick={() => openDrilldown("all")} active={drilldown === "all"} />
+      <div className="account-summary-grid">
+        <StatGroup title="Delivery &amp; commitment" subtitle="Milestone health and pipeline coverage" tone="positive">
+          <StatCard compact label="On track" value={formatNumber(summary.onTrack)} tone="positive" onClick={() => openDrilldown("onTrack")} active={drilldown === "onTrack"} />
+          <StatCard compact label="At risk" value={formatNumber(summary.atRisk)} tone="warning" onClick={() => openDrilldown("atRisk")} active={drilldown === "atRisk"} />
+          <StatCard compact label="Blocked" value={formatNumber(summary.blocked)} tone="critical" onClick={() => openDrilldown("blocked")} active={drilldown === "blocked"} />
+          <StatCard compact className="stat-metric-half" label="Committed" value={formatNumber(summary.committed)} tone="info" onClick={() => openDrilldown("committed")} active={drilldown === "committed"} />
+          <StatCard compact className="stat-metric-half" label="Uncommitted" value={formatNumber(summary.uncommitted)} tone="warning" onClick={() => openDrilldown("uncommitted")} active={drilldown === "uncommitted"} />
+        </StatGroup>
+        <StatGroup title="Account overview" subtitle="Saved scope, people and consumption" tone="info">
+          <StatCard compact label="Milestones" value={formatNumber(milestones.length)} onClick={() => openDrilldown("all")} active={drilldown === "all"} />
+          <StatCard compact label="Distinct owners" value={formatNumber(summary.owners)} tone="info" onClick={() => openDrilldown("all")} active={drilldown === "all"} />
+          <StatCard compact className="stat-metric-wide" label="Monthly use" value={formatCurrency(summary.monthlyUse)} onClick={() => openDrilldown("all")} active={drilldown === "all"} />
+        </StatGroup>
       </div>
       {drilldown ? (
         <section className="metric-drilldown" aria-live="polite">

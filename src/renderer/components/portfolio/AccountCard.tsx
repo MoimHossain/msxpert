@@ -4,16 +4,19 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { formatCurrency, formatNumber, lastRunLabel } from "../../lib/format";
 import { isFailed, isStale } from "../../lib/portfolioMetrics";
+import { FETCH_STAGE_LABELS, isAccountFetching, type AccountFetchProgress } from "../../../shared/fetch";
 
 interface AccountCardProps {
   account: AccountOverview;
   onOpen: () => void;
   onFetch: () => void;
   onRemove: () => void;
-  fetching: boolean;
+  progress: AccountFetchProgress | undefined;
+  fetchBusy: boolean;
 }
 
-export function AccountCard({ account, onOpen, onFetch, onRemove, fetching }: AccountCardProps) {
+export function AccountCard({ account, onOpen, onFetch, onRemove, progress, fetchBusy }: AccountCardProps) {
+  const fetching = isAccountFetching(progress);
   const stopAndRun = (
     event: MouseEvent<HTMLButtonElement>,
     action: () => void,
@@ -24,13 +27,13 @@ export function AccountCard({ account, onOpen, onFetch, onRemove, fetching }: Ac
 
   return (
     <article
-      className="account-card account-card-clickable"
+      className={`account-card account-card-clickable${fetching ? " account-card-fetching" : ""}`}
       role="link"
       tabIndex={0}
       aria-label={`Open ${account.name}`}
       onClick={onOpen}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
           onOpen();
         }
@@ -69,6 +72,11 @@ export function AccountCard({ account, onOpen, onFetch, onRemove, fetching }: Ac
         </div>
       </div>
 
+      {fetching && progress ? <div className="account-card-progress">
+        <div className="account-fetch-track" role="progressbar" aria-label={`Fetching ${account.name}`}
+          aria-valuetext={`${FETCH_STAGE_LABELS[progress.stage]}: ${progress.milestones} milestones`}><span /></div>
+        <small>{FETCH_STAGE_LABELS[progress.stage]}{progress.stage === "milestones" ? ` | ${formatNumber(progress.milestones)} found` : ""}</small>
+      </div> : null}
       <div className="account-card-footer">
         <span className="account-card-run">
           {isFailed(account) ? (
@@ -83,11 +91,11 @@ export function AccountCard({ account, onOpen, onFetch, onRemove, fetching }: Ac
           <Button
             variant="ghost"
             onClick={(event) => stopAndRun(event, onFetch)}
-            busy={fetching}
+            disabled={fetchBusy}
           >
             Fetch
           </Button>
-          <Button variant="ghost" onClick={(event) => stopAndRun(event, onRemove)}>
+          <Button variant="ghost" disabled={fetchBusy} onClick={(event) => stopAndRun(event, onRemove)}>
             Remove
           </Button>
         </div>

@@ -22,6 +22,7 @@ export const msxLinkSchema = z.url().refine(url => {
   return parsed.protocol === "https:" && parsed.origin === MSX_ORIGIN;
 }, "Only Microsoft Sales links are allowed.");
 export const milestoneExportSchema = z.object({
+  history: z.object({ accountId: idSchema, runId: z.iso.datetime() }).strict().optional(),
   accountIds: z.array(idSchema).min(1).max(2000).refine(ids => new Set(ids).size === ids.length, "Duplicate portfolio accounts."),
   expectedIds: z.array(idSchema).min(1).max(MAX_EXPORT_ROWS).refine(ids => new Set(ids).size === ids.length, "Duplicate milestones."),
   expectedHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -45,7 +46,7 @@ const settingsSchema = z.object({
     excludedStatusValues: z.array(z.number().int()).max(100),
     excludedStatusLabels: z.array(z.string().max(100)).max(100),
   }),
-  retentionSnapshots: z.number().int().min(1).max(500),
+  retentionSnapshots: z.literal(0),
   privacyAccepted: z.boolean(),
   territoryIds: z.array(z.guid()).max(1000),
   onboardingComplete: z.boolean(),
@@ -109,7 +110,8 @@ export function registerIpc(
   gate: OperationGate,
   isTrusted: (event: IpcMainInvokeEvent) => boolean,
   ai: AiService,
-  exporter = new MilestoneExporter(ids => service.getMilestones(ids), () => app.getPath("downloads"), path => shell.showItemInFolder(path)),
+  exporter = new MilestoneExporter((ids, history) => history ? service.history.getMilestones(history, ids) : service.getMilestones(ids),
+    () => app.getPath("downloads"), path => shell.showItemInFolder(path)),
 ): void {
   function handle(channel: string, handler: (input: unknown) => unknown): void {
     ipcMain.handle(channel, (event, input: unknown) => {
@@ -196,9 +198,25 @@ export function registerIpc(
   register(IPC.getAccountState, idSchema, (accountId) =>
     service.getAccountState(accountId),
   );
-  register(IPC.fetchAccounts, z.string().max(200).optional(), (accountId) =>
-    service.fetchAccounts(accountId),
-  );
+  handle(IPC.getFetchProgress, () => service.getFetchProgress());
+  register(IPC.historyRun, z.object({ accountId: idSchema, runId: z.iso.datetime() }).strict(),
+    selection => service.history.getRun(selection));
+  handle(IPC.historyIndex, () => service.history.getIndex());
+  register(IPC.historyDay, z.iso.date(), date => service.history.getDay(date));
+  ipcMain.handle(IPC.fetchAccounts, async (event, input: unknown) => {
+    if (!isTrusted(event)) throw new Error("Untrusted application request.");
+    const accountId = idSchema.optional().parse(input);
+    return gate.run(async () => {
+      try {
+        return await service.fetchAccounts(accountId, progress => {
+          if (!event.sender.isDestroyed()) event.sender.send(IPC.fetchProgress, progress);
+        });
+      } catch (error) {
+        if (error instanceof AuthRequiredError) event.sender.send(IPC.authRequired);
+        throw error;
+      }
+    });
+  });
   register(IPC.markReviewed, idSchema, (accountId) =>
     service.markReviewed(accountId),
   );

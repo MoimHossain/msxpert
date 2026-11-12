@@ -289,7 +289,7 @@ export class MsxClient {
     throw new Error("MSX request failed after retrying.");
   }
 
-  private async collection<T extends RawRecord>(path: string): Promise<T[]> {
+  private async collection<T extends RawRecord>(path: string, onPage?: (records: T[]) => void): Promise<T[]> {
     const records: T[] = [];
     const visited = new Set<string>();
     let next: string | null = path;
@@ -300,6 +300,7 @@ export class MsxClient {
       const page: ODataResponse<T> = await this.request<ODataResponse<T>>(next);
       if (!Array.isArray(page.value)) throw new Error("MSX returned an invalid collection.");
       records.push(...page.value);
+      onPage?.(page.value);
       next = page["@odata.nextLink"] ?? null;
     }
     return records;
@@ -505,8 +506,10 @@ export class MsxClient {
   async fetchMilestones(
     scope: ScopeSettings,
     accountIds: string[],
+    onProgress?: (progress: { milestones: number; pages: number }) => void,
   ): Promise<NormalizedMilestone[]> {
     const seen = new Map<string, RawRecord>();
+    let pages = 0;
     for (const group of chunks(accountIds, GUID_CHUNK)) {
       const accounts = group
         .map((id) => `_msp_parentaccount_value eq ${id}`)
@@ -519,15 +522,16 @@ export class MsxClient {
         `msp_milestonedate ge ${scope.dateFrom}`,
         `msp_milestonedate le ${scope.dateTo}`,
       ];
-      const records = await this.collection<RawRecord>(
+      await this.collection<RawRecord>(
         queryPath("msp_engagementmilestones", {
           "$filter": clauses.join(" and "),
           "$orderby": "msp_milestonedate asc",
         }),
+        records => {
+          for (const record of records) seen.set(String(record.msp_engagementmilestoneid), record);
+          onProgress?.({ milestones: seen.size, pages: ++pages });
+        },
       );
-      for (const record of records) {
-        seen.set(String(record.msp_engagementmilestoneid), record);
-      }
     }
     return [...seen.values()]
       .map(normalizeMilestone)

@@ -198,6 +198,8 @@ export interface MilestoneSummary {
   accountName: string | null;
   url: string;
   gone?: GoneReason;
+  createdByName?: string | null;
+  monthlyUseFormatted?: string | null;
 }
 
 export interface FieldChange {
@@ -411,6 +413,11 @@ export interface DesktopApi {
   refreshAccountTerritories(): Promise<void>;
   getAccountState(accountId: string): Promise<AccountState>;
   fetchAccounts(accountId?: string): Promise<FetchResult>;
+  getFetchProgress(): Promise<import("./fetch").FetchProgress | null>;
+  onFetchProgress(listener: (progress: import("./fetch").FetchProgress) => void): () => void;
+  getHistoryRun(selection: import("./history").HistorySelection): Promise<import("./history").HistoryRun>;
+  getHistoryIndex(): Promise<import("./history").HistoryIndex>;
+  getHistoryDay(date: string): Promise<import("./history").HistoryEvent[]>;
   markReviewed(accountId: string): Promise<AccountState>;
   searchUsers(term: string): Promise<SystemUserSearchResult[]>;
   addTeamPerson(user: SystemUserSearchResult): Promise<TeamPerson>;

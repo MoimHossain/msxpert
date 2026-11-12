@@ -99,6 +99,18 @@ describe("classifyGone", () => {
 });
 
 describe("MsxClient query construction", () => {
+  it("reports deduplicated milestone counts as each MSX page arrives", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({
+      value: [{ msp_engagementmilestoneid: "a" }],
+      "@odata.nextLink": "https://microsoftsales.crm.dynamics.com/api/data/v9.2/msp_engagementmilestones?$skiptoken=demo",
+    })).mockResolvedValueOnce(Response.json({ value: [{ msp_engagementmilestoneid: "a" }, { msp_engagementmilestoneid: "b" }] }));
+    vi.stubGlobal("fetch", fetch);
+    const progress = vi.fn();
+    const rows = await new MsxClient({ getAccessToken: async () => "test-only" }).fetchMilestones(scope, ["account"], progress);
+    expect(rows).toHaveLength(2);
+    expect(progress.mock.calls.map(([state]) => state)).toEqual([{ milestones: 1, pages: 1 }, { milestones: 2, pages: 2 }]);
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });

@@ -54,7 +54,7 @@ export function defaultSettings(now = new Date()): AppSettings {
       excludedStatusValues: DEFAULT_EXCLUDED_STATUSES.map((status) => status.value),
       excludedStatusLabels: DEFAULT_EXCLUDED_STATUSES.map((status) => status.label),
     },
-    retentionSnapshots: 60,
+    retentionSnapshots: 0,
     privacyAccepted: false,
     territoryIds: [],
     onboardingComplete: false,

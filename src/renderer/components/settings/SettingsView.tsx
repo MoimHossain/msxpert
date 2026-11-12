@@ -4,7 +4,6 @@ import { useNavigation } from "../../state/NavigationProvider";
 import { useToast } from "../../state/ToastProvider";
 import { PageHeader } from "../ui/PageHeader";
 import { Button } from "../ui/Button";
-import { TextField } from "../ui/TextField";
 import { ScopeEditor } from "../onboarding/ScopeEditor";
 import { UpdatesPanel } from "./UpdatesPanel";
 import { useUpdateBlocker } from "../../state/UpdateProvider";
@@ -26,12 +25,9 @@ export function SettingsView() {
   const [signingOut, setSigningOut] = useState(false);
   const [refreshingProfile, setRefreshingProfile] = useState(false);
   const [savingScope, setSavingScope] = useState(false);
-  const [retention, setRetention] = useState(settings.retentionSnapshots);
-  const [savingRetention, setSavingRetention] = useState(false);
   const [savingFeatures, setSavingFeatures] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
-  useUpdateBlocker(retention !== settings.retentionSnapshots);
   useUpdateBlocker(resetOpen || resetting);
   useUpdateBlocker(refreshingProfile);
   useUpdateBlocker(savingFeatures);
@@ -57,18 +53,6 @@ export function SettingsView() {
       notify(error instanceof Error ? error.message : String(error), "critical");
     } finally {
       setSigningOut(false);
-    }
-  };
-
-  const saveRetention = async () => {
-    setSavingRetention(true);
-    try {
-      await saveSettings({ ...settings, retentionSnapshots: retention });
-      notify("Retention updated.", "positive");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : String(error), "critical");
-    } finally {
-      setSavingRetention(false);
     }
   };
 
@@ -180,20 +164,10 @@ export function SettingsView() {
 
       <section className="settings-section">
         <h2>Data</h2>
-        <div className="scope-editor-grid">
-          <TextField
-            label="Snapshot retention"
-            type="number"
-            min={1}
-            max={500}
-            value={retention}
-            onChange={(event) => setRetention(Number(event.target.value))}
-            hint="Most recent snapshots kept per account, plus the first of each month."
-          />
-        </div>
-        <Button variant="secondary" busy={savingRetention} onClick={() => void saveRetention()}>
-          Save retention
-        </Button>
+        <p><strong>All fetch history is kept on this device.</strong> Successful snapshots, saved changes and failed-run
+          records remain in the encrypted vault. Marking reviewed does not delete history.</p>
+        <p className="field-hint">History grows with each fetch. Snapshots pruned by older versions cannot be recovered.
+          Removing an account only deletes history if you explicitly choose that option.</p>
 
         <dl className="fact-grid">
           <div className="fact-row">

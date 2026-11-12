@@ -27,8 +27,8 @@ import {
   isStale,
   staleAccountCount,
 } from "../../lib/portfolioMetrics";
+import { useFetch } from "../../state/FetchProvider";
 
-const ALL_SENTINEL = "__all__";
 
 type PortfolioDrilldown =
   | "accounts"
@@ -63,10 +63,10 @@ export function PortfolioView() {
   const { refreshOverview } = useAppData();
   const { goToAccount } = useNavigation();
   const { notify } = useToast();
+  const { fetchAccounts, busy: fetchBusy, progress } = useFetch();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [removingAccount, setRemovingAccount] = useState<AccountOverview | null>(null);
-  const [activeFetch, setActiveFetch] = useState<string | null>(null);
   const [drilldown, setDrilldown] = useState<PortfolioDrilldown | null>(null);
   const [portfolioMilestones, setPortfolioMilestones] =
     useState<MilestoneRow[] | null>(null);
@@ -156,9 +156,8 @@ export function PortfolioView() {
           : "Portfolio accounts";
 
   const runFetch = async (accountId?: string) => {
-    setActiveFetch(accountId ?? ALL_SENTINEL);
     try {
-      const result = await window.desktop.fetchAccounts(accountId);
+      const result = await fetchAccounts(accountId);
       const failed = result.accounts.filter((entry) => !entry.ok);
       if (failed.length > 0) {
         notify(
@@ -174,8 +173,6 @@ export function PortfolioView() {
       setPortfolioMilestones(null);
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), "critical");
-    } finally {
-      setActiveFetch(null);
     }
   };
 
@@ -186,13 +183,13 @@ export function PortfolioView() {
         subtitle={`Scope: ${overview.scope.label} (${overview.scope.dateFrom} to ${overview.scope.dateTo})`}
         actions={
           <>
-            <Button variant="secondary" onClick={() => setShowAddModal(true)}>
+            <Button variant="secondary" disabled={fetchBusy} onClick={() => setShowAddModal(true)}>
               Add customer
             </Button>
             <Button
               variant="primary"
-              busy={activeFetch === ALL_SENTINEL}
-              disabled={activeFetch !== null && activeFetch !== ALL_SENTINEL}
+              busy={fetchBusy}
+              disabled={!overview.accounts.length}
               onClick={() => void runFetch()}
             >
               Fetch all
@@ -362,7 +359,8 @@ export function PortfolioView() {
                     onOpen={() => goToAccount(account.id)}
                     onFetch={() => void runFetch(account.id)}
                     onRemove={() => setRemovingAccount(account)}
-                    fetching={activeFetch === account.id || activeFetch === ALL_SENTINEL}
+                    progress={progress?.running ? progress.accounts.find(row => row.accountId === account.id) : undefined}
+                    fetchBusy={fetchBusy}
                   />
                 ))}
               </div>

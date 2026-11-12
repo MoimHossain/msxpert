@@ -2145,10 +2145,120 @@ button.stat-metric:hover,
 }
 
 .change-card {
-  border: 1px solid var(--color-border);
+  --change-accent: var(--color-brand);
+  border: 1px solid color-mix(in srgb, var(--change-accent) 35%, var(--color-border));
+  border-left: 3px solid var(--change-accent);
   border-radius: var(--radius-md);
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  padding: 0;
+  margin-bottom: 12px;
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+
+.change-card-disappeared { --change-accent: var(--color-warning); }
+.change-card-churn { --change-accent: #9970d7; }
+.change-card-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 16px; }
+.change-kind { border-radius: 20px; padding: 3px 9px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  background: color-mix(in srgb, var(--change-accent) 12%, transparent); color: var(--change-accent); letter-spacing: .3px; }
+.change-card-identity { flex: 1 1 240px; min-width: 0; }
+.change-card-identity h4 { font-size: 14px; font-weight: 600; margin: 0; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.change-card-identity p { margin: 4px 0 0; font-size: 11px; color: var(--color-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-card-signals, .change-card-meta, .change-card-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.change-card-meta { color: var(--color-text-secondary); font-size: 11px; flex: 0 1 250px; overflow-wrap: anywhere; }
+.change-card-meta > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-card-links { font-size: 12px; }
+.change-card-links a { color: var(--color-brand); white-space: nowrap; }
+.change-amount { padding: 4px 8px; border-radius: 6px; background: var(--color-info-bg); color: var(--color-info);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.change-field-diffs { margin: 0; background: color-mix(in srgb, var(--change-accent) 5%, var(--color-bg-elevated)); }
+.change-field-row { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr);
+  gap: 12px; border-top: 1px solid var(--color-border); padding: 11px 16px; font-size: 12px; }
+.change-field-row dt { font-weight: 600; color: var(--color-text-secondary); }
+.change-field-row dt small { display: block; margin-top: 4px; font-weight: 400; }
+.change-field-row dd { display: flex; align-items: flex-start; gap: 12px; margin: 0; min-width: 0; }
+.change-field-row dd > :not(.diff-arrow) { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.change-field-row .diff-before { color: var(--color-text-secondary); background: color-mix(in srgb, var(--color-critical) 7%, transparent);
+  padding: 3px 6px; border-radius: 4px; }
+.change-field-row .diff-after { color: var(--color-info); background: var(--color-info-bg); text-decoration: none; padding: 3px 6px; border-radius: 4px; }
+.diff-arrow { color: var(--color-brand); padding-top: 3px; font-weight: 700; }
+.change-delta-up { color: var(--color-positive); }
+.change-delta-down { color: var(--color-critical); }
+.change-long-value summary { cursor: pointer; color: var(--color-brand); overflow-wrap: anywhere; }
+.change-long-value[open] > ins, .change-long-value[open] > del { display: block; margin-top: 10px; }
+.change-gone-reason { display: grid; gap: 5px; background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  border-top: 1px solid var(--color-border); padding: 12px 16px; font-size: 12px; }
+.change-gone-reason strong { color: var(--color-warning); }
+.change-silent-note { border-top: 1px solid var(--color-border); padding: 12px 16px; margin: 0; color: var(--color-text-secondary); font-size: 12px; }
+.change-kind-section { margin: 24px 0; }
+.change-kind-section h3 { font-size: 12px; letter-spacing: .6px; text-transform: uppercase; color: var(--color-brand); margin-bottom: 12px; }
+.change-kind-section h3 span { border-radius: 12px; background: var(--color-info-bg); padding: 2px 8px; margin-left: 6px; }
+.change-filters { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(130px, 1fr)); gap: 12px; margin: 20px 0; align-items: end; }
+.change-insights { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px 20px;
+  background: linear-gradient(110deg, var(--color-info-bg), var(--color-bg-elevated)); border: 1px solid var(--color-border); border-radius: 12px; }
+.change-insights > div { min-width: 0; display: grid; gap: 4px; }
+.change-insights strong { font-size: 25px; font-variant-numeric: tabular-nums; color: var(--color-brand); }
+.change-insights span { color: var(--color-text-secondary); font-size: 11px; }
+.account-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
+.account-summary-grid > :last-child .stat-metric:not(.stat-metric-wide) { grid-column: span 3; }
+.console-side-panel.console-side-panel { width: min(540px, 96vw); max-width: 96vw; background: var(--color-bg); color: var(--color-text); }
+.console-side-panel.console-side-panel-wide { width: min(1120px, 96vw); }
+.console-side-panel .fui-DrawerHeader { border-bottom: 1px solid var(--color-border); background: var(--color-bg-elevated); }
+.console-side-panel .fui-DrawerBody { min-width: 0; overflow: auto; padding: 20px; }
+.fetch-overall { padding: 20px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-info-bg); margin: 20px 0; }
+.fetch-overall h2 { font-size: 18px; overflow-wrap: anywhere; }
+.fetch-overall progress { width: 100%; accent-color: var(--color-brand); height: 8px; }
+.fetch-account-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.fetch-account-list li { padding: 14px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-elevated); }
+.fetch-account-list li > div:first-child { display: flex; gap: 10px; justify-content: space-between; align-items: start; }
+.fetch-account-list strong { min-width: 0; overflow-wrap: anywhere; }
+.fetch-account-list p { font-size: 12px; margin: 10px 0 0; }
+.fetch-account-list .fetch-account-active { border-color: var(--color-brand); box-shadow: 0 0 0 1px var(--color-brand); }
+.account-fetch-track { height: 5px; overflow: hidden; background: var(--color-border); border-radius: 4px; margin: 12px 0 6px; }
+.account-fetch-track > span { display: block; width: 32%; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, #dd47a3, #7267f0, #459ee9); animation: account-fetch-slide 1.5s ease-in-out infinite; }
+@keyframes account-fetch-slide { from { transform: translateX(-100%); } to { transform: translateX(320%); } }
+@media (prefers-reduced-motion: reduce) { .account-fetch-track > span { animation: none; width: 100%; } }
+.account-card-progress small { font-size: 10px; color: var(--color-brand); }
+.account-card.account-card-fetching { border-color: var(--color-brand); box-shadow: 0 0 0 1px var(--color-brand), var(--shadow-md); }
+.fetch-progress-reopen { position: fixed; right: 24px; bottom: 42px; z-index: 20; padding: 10px 16px; border: 1px solid var(--color-brand);
+  border-radius: 20px; background: var(--color-bg-elevated); color: var(--color-brand); font: inherit; box-shadow: var(--shadow-md); cursor: pointer; }
+.history-account-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin: 20px 0; }
+.history-account-heading h2 { font-size: 19px; }
+.history-account-heading p { max-width: 850px; color: var(--color-text-secondary); font-size: 12px; margin-top: 6px; }
+.history-run-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.history-run-navigation > span { flex: 1; text-align: center; font-size: 12px; color: var(--color-text-secondary); }
+.history-run-date { font-size: 20px; font-weight: 600; color: var(--color-brand); margin: 20px 0 8px; }
+.history-run-summary, .history-baseline { padding: 18px; background: var(--color-bg-elevated); border: 1px solid var(--color-border); border-radius: 10px; margin: 18px 0; }
+.history-run-summary h2 { font-size: 18px; }
+.history-run-summary p { color: var(--color-text-secondary); font-size: 12px; }
+.history-run-counts { display: flex; gap: 10px 18px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--color-border); font-size: 12px; }
+.history-run-counts strong { color: var(--color-brand); }
+.history-day-navigation { display: flex; align-items: end; gap: 12px; margin: 18px 0; }
+.history-day-navigation .field { flex: 1; }
+.history-day-strip { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 12px; margin-bottom: 16px; }
+.history-day-strip > button { flex: 0 0 130px; display: grid; gap: 8px; background: var(--color-bg-elevated); color: var(--color-text);
+  border: 1px solid var(--color-border); border-radius: 10px; padding: 12px; text-align: left; font: inherit; cursor: pointer; }
+.history-day-strip > button.active { border-color: var(--color-brand); background: var(--color-info-bg); }
+.history-day-strip > button > span:first-child { font-size: 11px; }
+.history-day-strip strong { color: var(--color-brand); font-size: 20px; }
+.history-day-bar { display: flex; height: 5px; width: 100%; border-radius: 4px; overflow: hidden; }
+.history-day-bar > i:nth-child(1) { background: var(--color-brand); }
+.history-day-bar > i:nth-child(2) { background: #9970d7; }
+.history-day-bar > i:nth-child(3) { background: var(--color-warning); }
+.history-event-context { margin: 20px 0 6px; color: var(--color-text-secondary); font-size: 11px; }
+.history-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .change-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .account-summary-grid { grid-template-columns: 1fr; }
+  .change-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .change-field-row { grid-template-columns: 1fr; gap: 8px; }
+  .change-field-row dd { flex-wrap: wrap; }
+  .change-filters { grid-template-columns: 1fr; }
+  .history-account-heading, .history-day-navigation { flex-wrap: wrap; }
+  .history-day-navigation .field { flex-basis: 100%; order: -1; }
+  .history-run-navigation > span { flex-basis: 100%; order: -1; }
 }
 
 .field-diff-list {

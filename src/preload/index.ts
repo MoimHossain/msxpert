@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { RestartRequest, UpdateState } from "../shared/updates";
+import type { FetchProgress } from "../shared/fetch";
 import type {
   AppSettings,
   DesktopApi,
@@ -49,6 +50,11 @@ const IPC = {
   refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",
   fetchAccounts: "portfolio:fetch",
+  fetchProgress: "portfolio:fetch-progress",
+  getFetchProgress: "portfolio:fetch-state",
+  historyRun: "history:run",
+  historyIndex: "history:index",
+  historyDay: "history:day",
   markReviewed: "portfolio:mark-reviewed",
   searchUsers: "team:search-users",
   addTeamPerson: "team:add",
@@ -123,6 +129,15 @@ const api: DesktopApi = {
     ipcRenderer.invoke(IPC.getAccountState, accountId),
   fetchAccounts: (accountId?: string) =>
     ipcRenderer.invoke(IPC.fetchAccounts, accountId),
+  getFetchProgress: () => ipcRenderer.invoke(IPC.getFetchProgress),
+  onFetchProgress: listener => {
+    const handler = (_event: IpcRendererEvent, progress: FetchProgress) => listener(progress);
+    ipcRenderer.on(IPC.fetchProgress, handler);
+    return () => { ipcRenderer.removeListener(IPC.fetchProgress, handler); };
+  },
+  getHistoryRun: selection => ipcRenderer.invoke(IPC.historyRun, selection),
+  getHistoryIndex: () => ipcRenderer.invoke(IPC.historyIndex),
+  getHistoryDay: date => ipcRenderer.invoke(IPC.historyDay, date),
   markReviewed: (accountId: string) =>
     ipcRenderer.invoke(IPC.markReviewed, accountId),
   searchUsers: (term: string) => ipcRenderer.invoke(IPC.searchUsers, term),

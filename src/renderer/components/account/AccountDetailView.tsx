@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccountState } from "../../hooks/useAccountState";
 import { useAppData } from "../../state/AppDataProvider";
 import { useNavigation, type AccountTab } from "../../state/NavigationProvider";
@@ -15,6 +15,7 @@ import { ChangesTab } from "./ChangesTab";
 import { HistoryTab } from "./HistoryTab";
 import { lastRunLabel } from "../../lib/format";
 import { pendingChangeCount } from "../../lib/changes";
+import { useFetch } from "../../state/FetchProvider";
 
 interface AccountDetailViewProps {
   accountId: string;
@@ -26,13 +27,18 @@ export function AccountDetailView({ accountId, tab }: AccountDetailViewProps) {
   const { refreshOverview } = useAppData();
   const { navigate, goToAccount } = useNavigation();
   const { notify } = useToast();
+  const { fetchAccounts, busy: fetchBusy, progress } = useFetch();
+  const accountStage = progress?.accounts.find(row => row.accountId === accountId)?.stage;
+  useEffect(() => {
+    if (accountStage === "complete" || accountStage === "failed") reload();
+  }, [accountId, accountStage, progress?.id, reload]);
   const [fetching, setFetching] = useState(false);
   const [removing, setRemoving] = useState(false);
 
   const runFetch = async () => {
     setFetching(true);
     try {
-      const result = await window.desktop.fetchAccounts(accountId);
+      const result = await fetchAccounts(accountId);
       const entry = result.accounts.find((item) => item.accountId === accountId);
       if (entry && !entry.ok) {
         notify(`Fetch failed: ${entry.error ?? "Unknown error"}`, "critical");
@@ -71,10 +77,10 @@ export function AccountDetailView({ accountId, tab }: AccountDetailViewProps) {
         ]}
         actions={
           <>
-            <Button variant="secondary" busy={fetching} onClick={() => void runFetch()}>
+            <Button variant="secondary" busy={fetching} disabled={fetchBusy} onClick={() => void runFetch()}>
               Fetch now
             </Button>
-            <Button variant="ghost" onClick={() => setRemoving(true)}>
+            <Button variant="ghost" disabled={fetchBusy} onClick={() => setRemoving(true)}>
               Remove account
             </Button>
           </>
@@ -111,7 +117,7 @@ export function AccountDetailView({ accountId, tab }: AccountDetailViewProps) {
             }}
           />
         ) : null}
-        {tab === "history" ? <HistoryTab runs={data.runs} /> : null}
+        {tab === "history" ? <HistoryTab accountId={accountId} runs={data.runs} /> : null}
       </div>
 
       {removing ? (

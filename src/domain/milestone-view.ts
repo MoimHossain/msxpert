@@ -1,4 +1,4 @@
-import type { MilestoneRow } from "../shared/types";
+import type { MilestoneRow, NormalizedMilestone, PortfolioAccount } from "../shared/types";
 import {
   FACET_KEYS, NOT_SET,
   type MilestoneFacet, type MilestoneFilterSeeds, type MilestoneFilters,
@@ -10,6 +10,11 @@ export const FACET_LABELS: Record<MilestoneFacet, string> = {
   commitment: "Commitment", month: "Month", solutionArea: "Solution area", azureRegion: "Azure region", workload: "Workload",
 };
 const compareText = new Intl.Collator("en-US").compare;
+
+export function enrichMilestones(rows: NormalizedMilestone[], account: PortfolioAccount): MilestoneRow[] {
+  return rows.map(row => ({ ...row, createdById: row.createdById ?? null, createdByName: row.createdByName ?? null,
+    portfolioAccountId: account.id, portfolioAccountName: account.name, portfolioTpid: account.tpid }));
+}
 
 export function emptyFilters(): MilestoneFilters {
   return {

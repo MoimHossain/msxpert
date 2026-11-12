@@ -20,6 +20,7 @@ import { UpdatesPanel } from "./components/settings/UpdatesPanel";
 import { UpdateProvider } from "./state/UpdateProvider";
 import { ToastViewport } from "./components/ui/ToastViewport";
 import { Avatar } from "@fluentui/react-components";
+import { FetchProvider } from "./state/FetchProvider";
 
 function StartupUpdates() {
   const { state } = useAppData();
@@ -58,7 +59,7 @@ function RouteOutlet() {
     case "settings":
       return <SettingsView />;
     case "account":
-      return <AccountDetailView accountId={route.accountId} tab={route.tab} />;
+      return <AccountDetailView key={route.accountId} accountId={route.accountId} tab={route.tab} />;
     default:
       return null;
   }
@@ -151,10 +152,12 @@ export function App() {
       <ToastProvider>
         <UpdateProvider>
           <AppDataProvider>
+            <FetchProvider>
             <NavigationProvider>
               <AppContent />
               <StartupUpdates />
             </NavigationProvider>
+            </FetchProvider>
           </AppDataProvider>
         </UpdateProvider>
       </ToastProvider>
