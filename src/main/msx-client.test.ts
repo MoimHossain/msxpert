@@ -54,14 +54,44 @@ function milestone(
 }
 
 describe("classifyGone", () => {
+  it("resolves only requested MSX actors to work identities without Graph or display-name joins", async () => {
+    const first = "00000000-0000-0000-0000-000000000001";
+    const second = "00000000-0000-0000-0000-000000000002";
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({ value: [
+      { systemuserid: first, domainname: "first@example.invalid", internalemailaddress: "different@example.invalid", isdisabled: false },
+      { systemuserid: second, domainname: "DOMAIN\\second", internalemailaddress: "second@example.invalid", isdisabled: true },
+    ] }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await new MsxClient({ getAccessToken: async () => "synthetic" }).resolveOrgActors([first, second, first], new AbortController().signal);
+    expect(result).toEqual([{ msxUserId: first, upn: "first@example.invalid" }]);
+    const url = new URL(String(fetch.mock.calls[0]?.[0]));
+    expect(url.pathname).toContain("/systemusers");
+    expect(url.searchParams.get("$filter")).toBe(`systemuserid eq ${first} or systemuserid eq ${second}`);
+    expect(url.searchParams.get("$select")).not.toContain("fullname");
+  });
+
+  it("bounds actor lookups to 25 IDs and aborts without another network request", async () => {
+    const ids = Array.from({ length: 26 }, (_, index) => `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`);
+    const fetch = vi.fn().mockImplementation(async () => Response.json({ value: [] }));
+    vi.stubGlobal("fetch", fetch);
+    const client = new MsxClient({ getAccessToken: async () => "synthetic" });
+    const controller = new AbortController();
+    expect(await client.resolveOrgActors(ids, controller.signal)).toEqual([]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(new URL(String(fetch.mock.calls[0]?.[0])).searchParams.get("$filter")?.split(" or ")).toHaveLength(25);
+    controller.abort();
+    await expect(client.resolveOrgActors(ids, controller.signal)).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it("captures Raised By from Created By rather than Owner, preserving missing and automated creators", () => {
     const raw = {
       msp_engagementmilestoneid: "milestone", _ownerid_value: "owner",
+      "_ownerid_value@Microsoft.Dynamics.CRM.lookuplogicalname": "team",
       "_ownerid_value@OData.Community.Display.V1.FormattedValue": "Current Owner",
       _createdby_value: "creator", "_createdby_value@OData.Community.Display.V1.FormattedValue": "Creating Agent",
     };
     expect(normalizeMilestone(raw)).toMatchObject({
-      ownerId: "owner", ownerName: "Current Owner", createdById: "creator", createdByName: "Creating Agent",
+      ownerId: "owner", ownerEntityType: "team", ownerName: "Current Owner", createdById: "creator", createdByName: "Creating Agent",
     });
     expect(normalizeMilestone({ msp_engagementmilestoneid: "legacy" })).toMatchObject({
       createdById: null, createdByName: null,

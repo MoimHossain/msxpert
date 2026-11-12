@@ -15,6 +15,7 @@ import type { AuthService } from "./auth";
 import { AuthRequiredError } from "./auth";
 import { loadConnectionConfig } from "./connection-config";
 import { microsoftFiscalYear } from "../domain/defaults";
+import { setTimeout as delay } from "node:timers/promises";
 
 const connection = loadConnectionConfig();
 const CRM_ORIGIN = connection.resourceUrl.replace(/\/$/, "");
@@ -96,10 +97,6 @@ function chunks<T>(values: T[], size: number): T[][] {
   return result;
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 function recordUrl(entityName: string, id: string): string {
   const parameters = new URLSearchParams({
     forceUCI: "1",
@@ -157,6 +154,7 @@ export function normalizeMilestone(record: RawRecord): NormalizedMilestone {
       stringOrNull(record.msp_forecastcomments_lastmodifiedon),
     milestoneComments: stringOrNull(record.msp_milestonecomments),
     ownerId: stringOrNull(record._ownerid_value),
+    ownerEntityType: stringOrNull(record["_ownerid_value@Microsoft.Dynamics.CRM.lookuplogicalname"]),
     ownerName: formatted(record, "_ownerid_value"),
     accountId: stringOrNull(record._msp_parentaccount_value),
     accountName: formatted(record, "_msp_parentaccount_value"),
@@ -241,7 +239,7 @@ export function classifyGone(
 export class MsxClient {
   constructor(private readonly auth: Pick<AuthService, "getAccessToken">) {}
 
-  private async request<T>(pathOrUrl: string): Promise<T> {
+  private async request<T>(pathOrUrl: string, signal?: AbortSignal): Promise<T> {
     const url = pathOrUrl.startsWith("https://")
       ? new URL(pathOrUrl)
       : new URL(pathOrUrl, API_ROOT);
@@ -249,6 +247,7 @@ export class MsxClient {
 
     let renewed = false;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      signal?.throwIfAborted();
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${await this.auth.getAccessToken()}`,
@@ -257,7 +256,7 @@ export class MsxClient {
           "OData-Version": "4.0",
           Prefer: 'odata.include-annotations="*"',
         },
-        signal: AbortSignal.timeout(30000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       });
       if (response.ok) return (await response.json()) as T;
       if (response.status === 401) {
@@ -274,7 +273,7 @@ export class MsxClient {
         const wait = header && !Number.isNaN(seconds) ? Math.max(0, seconds * 1000) :
           header ? Math.max(0, Date.parse(header) - Date.now()) : 500 * 2 ** attempt;
         if (!Number.isFinite(wait) || wait > 60000) throw new Error("MSX is busy. Retry later.");
-        await delay(wait);
+        await delay(wait, undefined, { signal });
         continue;
       }
       const requestId =
@@ -289,7 +288,7 @@ export class MsxClient {
     throw new Error("MSX request failed after retrying.");
   }
 
-  private async collection<T extends RawRecord>(path: string, onPage?: (records: T[]) => void): Promise<T[]> {
+  private async collection<T extends RawRecord>(path: string, onPage?: (records: T[]) => void, signal?: AbortSignal): Promise<T[]> {
     const records: T[] = [];
     const visited = new Set<string>();
     let next: string | null = path;
@@ -297,7 +296,7 @@ export class MsxClient {
       const url = new URL(next, API_ROOT).href;
       if (visited.has(url)) throw new Error("MSX returned a repeated pagination link. Retry the request.");
       visited.add(url);
-      const page: ODataResponse<T> = await this.request<ODataResponse<T>>(next);
+      const page: ODataResponse<T> = await this.request<ODataResponse<T>>(next, signal);
       if (!Array.isArray(page.value)) throw new Error("MSX returned an invalid collection.");
       records.push(...page.value);
       onPage?.(page.value);
@@ -570,6 +569,31 @@ export class MsxClient {
         classifyGone(scope, raw.has(id) ? normalizeMilestone(raw.get(id)!) : null, inTree),
       ]),
     );
+  }
+
+  async resolveOrgActors(ids: string[], signal: AbortSignal): Promise<Array<{ msxUserId: string; upn: string }>> {
+    const wanted = [...new Set(z.array(z.guid()).parse(ids).map(id => id.toLowerCase()))];
+    const result: Array<{ msxUserId: string; upn: string }> = [];
+    for (const batch of chunks(wanted, GUID_CHUNK)) {
+      signal.throwIfAborted();
+      const records = await this.collection<RawRecord>(queryPath("systemusers", {
+        "$select": "systemuserid,domainname,internalemailaddress,isdisabled,applicationid,accessmode",
+        "$filter": batch.map(id => `systemuserid eq ${id}`).join(" or "),
+      }), undefined, signal);
+      for (const record of records) {
+        const user = z.object({
+          systemuserid: z.guid(), domainname: z.string().nullish(),
+          internalemailaddress: z.string().nullish(), isdisabled: z.boolean(),
+          applicationid: z.guid().nullish(), accessmode: z.number().int().nullish(),
+        }).parse(record);
+        if (!batch.includes(user.systemuserid.toLowerCase())) throw new Error("MSX returned an unexpected organization identity.");
+        if (user.isdisabled || user.applicationid || user.accessmode === 4) continue;
+        const upn = [user.domainname, user.internalemailaddress].find(value => z.email().safeParse(value).success);
+        if (upn) result.push({ msxUserId: user.systemuserid.toLowerCase(), upn: upn.toLowerCase() });
+      }
+    }
+    signal.throwIfAborted();
+    return result;
   }
 
   async searchUsers(term: string): Promise<SystemUserSearchResult[]> {

@@ -10,7 +10,7 @@ if (!process.versions.electron) {
   delete env.ELECTRON_RUN_AS_NODE;
   try {
     const result = spawnSync(require("electron"), [__filename], {
-      env, stdio: "inherit", timeout: 120000, windowsHide: true,
+      env, stdio: "inherit", timeout: 180000, windowsHide: true,
     });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;
@@ -50,6 +50,24 @@ if (!process.versions.electron) {
   let resumeFetch = null;
   let failNextAccount = false;
   let lastHistorySelection = null;
+  let organizationService;
+  let organizationAi;
+  let catalogSelection = "valid";
+  const syntheticOrgOwnerId = "00000000-0000-4000-8000-000000000091";
+  let pauseNextOrganization = false;
+  let resumeOrganization = null;
+  let closedOrgSessions = 0;
+  const orgQueries = [];
+  const orgProfiles = {
+    "demo@example.invalid": { name: "Demo Manager", upn: "demo@example.invalid", jobTitle: "Cloud Solution Architect", hasReports: false },
+    "lead@example.invalid": { name: "Demo Lead", upn: "lead@example.invalid", jobTitle: "Cloud Solution Architecture Manager", hasReports: true },
+    "head@example.invalid": { name: "Demo Country Head", upn: "head@example.invalid", jobTitle: "Country Manager", hasReports: true },
+    "connector@example.invalid": { name: "Demo Connector", upn: "connector@example.invalid", jobTitle: "Sales Enablement Lead", hasReports: true },
+    "engineer@example.invalid": { name: "Demo Engineer", upn: "engineer@example.invalid", jobTitle: "Solution Engineer", hasReports: false },
+    "executive@example.invalid": { name: "Demo Executive", upn: "executive@example.invalid", jobTitle: "Account Executive", hasReports: false },
+    "above@example.invalid": { name: "Demo CVP", upn: "above@example.invalid", jobTitle: "Corporate Vice President", hasReports: true },
+    "review@example.invalid": { name: "Review Example", upn: "review@example.invalid", jobTitle: "Operations Analyst", hasReports: null },
+  };
   const demoMilestones = (account) => Array.from({ length: 60 }, (_, index) => ({
     id: `milestone-${account.id}-${index}`, name: `Demo migration ${String(index).padStart(2, "0")} with a long milestone name to resize${index === 0 ? " and additional migration details".repeat(12) : ""}`,
     number: `DEMO-${index}`, date: index < 30 ? "2027-01-15" : "2027-02-15",
@@ -59,7 +77,8 @@ if (!process.versions.electron) {
     solutionArea: "Infrastructure", helpNeeded: null, azureRegion: index % 2 ? "North Europe" : null, azureCapacityType: null,
     monthlyUse: index - 20, monthlyUseFormatted: String(index - 20), nonRecurringMonths: null,
     forecastComments: index % 2 ? "Needs timeline review" : null, forecastCommentsModifiedOn: null, milestoneComments: null,
-    ownerId: index % 2 ? "sam" : "demo-owner", ownerName: index % 2 ? "Sam" : "Demo Owner with a long display name for responsive controls",
+    ownerId: index % 2 ? "sam" : syntheticOrgOwnerId, ownerEntityType: "systemuser",
+    ownerName: index % 2 ? "Sam" : "Demo Owner with a long display name for responsive controls",
     accountId: `child-${account.id}`, accountName: "Actual subsidiary with a long account name ".repeat(8), opportunityId: null, opportunityName: "Demo opportunity",
     opportunityUrl: index === 1 ? null : `${MSX_ORIGIN}/main.aspx?etn=opportunity&id=opportunity-${account.id}-${index}`,
     createdOn: null, createdById: index === 2 ? null : index % 2 ? "creator-two" : "creator-one",
@@ -100,7 +119,10 @@ if (!process.versions.electron) {
     phase = next;
     window.webContents.send(IPC.updateChanged, snapshot());
   };
-  const js = (source) => window.webContents.executeJavaScript(source);
+  const js = async (source) => {
+    try { return await window.webContents.executeJavaScript(source); }
+    catch (error) { console.error("Synthetic renderer script failed:", source); throw error; }
+  };
   const screenshot = async (path) => {
     await new Promise(resolve => setTimeout(resolve, 200));
     await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
@@ -472,7 +494,7 @@ if (!process.versions.electron) {
     await wait(() => js("document.querySelector('.milestone-grid th')?.dataset.column === 'number'"));
     assert.equal(await js("JSON.parse(localStorage.getItem('csu-console-milestone-columns-v1')).widths.name"), originalWidth + 80);
     await click("Columns");
-    await wait(() => js("document.querySelectorAll('.milestone-column-choices input').length === 15"));
+    await wait(() => js("document.querySelectorAll('.milestone-column-choices input').length === 17"));
     await js(`['name', 'ownerName', 'actions'].forEach(key => document.querySelector('[name="milestone-column-' + key + '"]').click())`);
     await wait(() => js("!document.querySelector('.milestone-grid th[data-column=name]') && !document.querySelector('.milestone-grid th[data-column=ownerName]') && !document.querySelector('.milestone-row-actions')"));
     await click("Columns");
@@ -515,7 +537,7 @@ if (!process.versions.electron) {
     assert.equal(await js("document.querySelector('[name=milestone-column-number]').disabled"), true, "The last visible column cannot be hidden");
     await click("Columns");
     await click("Reset columns");
-    await wait(() => js("document.querySelector('.milestone-grid th').dataset.column === 'name' && document.querySelectorAll('.milestone-grid th').length === 15"));
+    await wait(() => js("document.querySelector('.milestone-grid th').dataset.column === 'name' && document.querySelectorAll('.milestone-grid th').length === 17"));
     await js("document.querySelector('.milestone-grid-scroll').scrollIntoView({block:'start'})");
     if (process.env.MCAPS_SMOKE_SCREENSHOT) {
       await js(`[...document.querySelectorAll('[aria-label="Dismiss notification"]')].forEach(button => button.click())`);
@@ -628,6 +650,199 @@ if (!process.versions.electron) {
     await setModel("");
     await click("Test AI access");
     await wait(() => js("Boolean(document.querySelector('.ai-connections .connection-success'))"));
+  };
+  const checkOrganization = async () => {
+    await organizationAi.disconnect();
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.organization-section'))"));
+    const disabled = label => js(`[...document.querySelectorAll('.organization-section button')].find(button => button.textContent.trim() === ${JSON.stringify(label)}).disabled`);
+    assert.equal(await disabled("Discover milestone people"), true, "Discovery requires a current successful Work IQ test");
+    assert.equal(await disabled("Explore hierarchy (experimental)"), true);
+    assert.equal(await disabled("Manage"), false, "Local organization management is available without either AI test");
+    assert.equal(await disabled("Import catalog"), false);
+    assert.equal(await disabled("Refresh MSX links"), false);
+    await click("Import catalog");
+    await wait(() => js("document.querySelector('.organization-section').textContent.includes('Catalog import complete: 1 added')"));
+    assert.equal(orgQueries.length, 0, "Import never calls Work IQ");
+    assert.equal((await organizationService.getState()).people[0].msxUserIds.length, 0, "Import is local; exact MSX linking is explicit");
+    catalogSelection = "invalid";
+    await click("Import catalog");
+    await wait(() => js("document.querySelector('.organization-section').textContent.includes('not valid JSON')"));
+    assert.equal((await organizationService.getState()).people.length, 1, "Invalid catalog import is atomic");
+    catalogSelection = "cancel";
+    await click("Import catalog");
+    await wait(async () => !(await disabled("Import catalog")));
+    assert.equal((await organizationService.getState()).people.length, 1, "Cancelled picker does not change the cache");
+    catalogSelection = "valid";
+    await click("Manage");
+    await wait(() => js("document.querySelector('.organization-people')?.textContent.includes('Imported catalog')"));
+    await click("Add person");
+    await setField("Display name", "Offline Person", ".organization-editor");
+    await setField("Full work UPN / email", "offline@example.invalid", ".organization-editor");
+    await setField("Job title", "Example role", ".organization-editor");
+    await setField("Organization unit", "ISD", ".organization-editor");
+    await click("Save local person");
+    await wait(() => js("document.querySelector('.organization-people')?.textContent.includes('Offline Person')"));
+    await clickAccessible("Remove Offline Person");
+    await click("Remove local person");
+    await wait(async () => (await organizationService.getState()).people.length === 1);
+    await clickAccessible("Close Manage organization");
+    await click("Refresh MSX links");
+    await wait(async () => (await organizationService.getState()).people[0].msxUserIds.includes(syntheticOrgOwnerId));
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, "-catalog-import.png"));
+    }
+    await click("Test AI access");
+    await wait(() => js("Boolean(document.querySelector('.ai-connections .connection-success'))"));
+    await click("Test Work IQ access");
+    await wait(async () => !(await disabled("Discover milestone people")));
+    const tenantInput = ".workiq-connections input";
+    const savedTenant = await js(`document.querySelectorAll('${tenantInput}')[1].value`);
+    const editTenant = value => js(`(() => {
+      const input = document.querySelectorAll('${tenantInput}')[1];
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await editTenant("00000000-0000-4000-8000-000000000093");
+    await wait(() => disabled("Discover milestone people"));
+    assert.equal(await disabled("Manage"), false, "Untested AI connection edits do not disable local management");
+    await editTenant(savedTenant);
+    await wait(async () => !(await disabled("Explore hierarchy (experimental)")));
+    pauseNextOrganization = true;
+    await click("Explore hierarchy (experimental)");
+    await wait(() => resumeOrganization !== null);
+    assert.deepEqual(orgQueries[0], { upn: "demo@example.invalid", includeReports: false },
+      "Discovery starts with the exact MSX UPN, never an unsupported Work IQ signed-in-subject question");
+    await wait(() => js("Boolean(document.querySelector('.organization-progress .organization-boundary'))"));
+    assert.equal(await js("document.querySelector('.organization-progress').textContent.includes('Demo Country Head')"), true);
+    assert.equal(orgQueries.some(query => query.upn === "above@example.invalid"), false, "The first country head stops upward traversal before the CVP");
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.organization-progress'))"));
+    const confirmationCount = confirmations.length;
+    window.webContents.send(IPC.updatePrepareRestart, { id: "00000000-0000-4000-8000-000000000092" });
+    await wait(() => confirmations.length === confirmationCount + 1);
+    assert.equal(confirmations.at(-1).safe, false, "Organization discovery blocks an update restart");
+    await click("Stop discovery");
+    await wait(() => !organizationService.busy);
+    await wait(() => closedOrgSessions === 1);
+    assert.equal((await organizationService.getState()).progress.status, "cancelled");
+    await clickAccessible("Close Organization discovery");
+    await click("Settings");
+    await wait(async () => !(await disabled("Explore hierarchy (experimental)")));
+    await click("Explore hierarchy (experimental)");
+    await wait(() => closedOrgSessions === 2);
+    await wait(() => js("document.querySelector('.organization-progress')?.textContent.includes('Synthetic report list is incomplete.')"));
+    const discovered = await organizationService.getState();
+    assert.equal(discovered.progress.status, "partial", "Incomplete Work IQ reports must never claim exhaustive coverage");
+    assert.equal(discovered.root.upn, "head@example.invalid");
+    for (const [upn, org] of [["demo@example.invalid", "ISD"], ["engineer@example.invalid", "STU"], ["executive@example.invalid", "ATU"]]) {
+      assert.equal(discovered.people.find(person => person.upn === upn)?.org, org);
+    }
+    assert.equal(discovered.people.some(person => person.upn === "connector@example.invalid"), false, "Unmatched managers are traversed but not stored");
+    assert.ok(discovered.people.find(person => person.upn === "demo@example.invalid").msxUserIds.includes(syntheticOrgOwnerId));
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-org-progress.png`));
+    }
+    await clickAccessible("Close Organization discovery");
+    await click("Manage");
+    await wait(() => js("Boolean(document.querySelector('.organization-manager .organization-people'))"));
+    await clickAccessible("Edit Demo Manager");
+    await setField("Job title", "Account Executive", ".organization-editor");
+    await setField("Organization unit", "ATU", ".organization-editor");
+    await click("Save local person");
+    await wait(async () => (await organizationService.getState()).people.find(person => person.upn === "demo@example.invalid")?.source === "manual");
+    await wait(() => js("[...document.querySelectorAll('.organization-manager button')].some(button => button.textContent.trim() === 'Add person' && !button.disabled)"));
+    await click("Add person");
+    await setField("Display name", "Manual Example", ".organization-editor");
+    await setField("Full work UPN / email", "manual@example.invalid", ".organization-editor");
+    await setField("Job title", "Solution Engineer", ".organization-editor");
+    await setField("Organization unit", "STU", ".organization-editor");
+    await click("Save local person");
+    await wait(() => js("document.querySelector('.organization-people')?.textContent.includes('Manual Example')"));
+    const original = window.getContentSize();
+    const initialTheme = await js("document.documentElement.dataset.theme");
+    try {
+      for (const theme of [initialTheme, initialTheme === "light" ? "dark" : "light"]) {
+        if (await js("document.documentElement.dataset.theme") !== theme) {
+          await js(`document.querySelector('.appearance-settings input[value="${theme}"]').click()`);
+          await wait(() => js(`document.documentElement.dataset.theme === "${theme}"`));
+        }
+        for (const width of [1280, 900, 640]) {
+          window.setContentSize(width, original[1]);
+          await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+          const contained = () => js(`(() => {
+            const drawer = document.querySelector('.organization-manager').getBoundingClientRect();
+            return drawer.left >= -1 && drawer.right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1;
+          })()`);
+          await wait(contained);
+          assert.equal(await contained(), true, `Organization manager remains contained at ${width}px in ${theme}`);
+        }
+        if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+          await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-org-manage.png`));
+        }
+      }
+    } finally {
+      window.setContentSize(...original);
+    }
+    await clickAccessible("Remove Manual Example");
+    await wait(() => js("document.body.innerText.includes('Remove local organization person?')"));
+    await click("Remove local person");
+    await wait(async () => !(await organizationService.getState()).people.some(person => person.upn === "manual@example.invalid"));
+    await clickAccessible("Close Manage organization");
+    await click("Explore hierarchy (experimental)");
+    await wait(() => closedOrgSessions === 3);
+    const edited = (await organizationService.getState()).people.find(person => person.upn === "demo@example.invalid");
+    assert.equal(edited.org, "ATU", "Rediscovery preserves explicit local corrections");
+    assert.equal(edited.source, "manual");
+    await clickAccessible("Close Organization discovery");
+    const beforePeople = orgQueries.length;
+    await wait(async () => !(await disabled("Discover milestone people")));
+    await click("Discover milestone people");
+    await wait(() => closedOrgSessions === 4);
+    await wait(() => js("document.querySelector('.organization-progress')?.textContent.includes('A milestone profile was rejected:')"));
+    const peopleQueries = orgQueries.slice(beforePeople);
+    assert.equal(peopleQueries.length, 4, "One exact query per unique referenced actor, including an unavailable actor");
+    assert.ok(peopleQueries.every(query => !query.includeReports && query.profileOnly), "Primary discovery never traverses managers or reports");
+    assert.equal(await js("Boolean(document.querySelector('.organization-progress .organization-boundary'))"), false, "Milestone mode does not imply a CVP boundary");
+    const peopleState = await organizationService.getState();
+    assert.equal(peopleState.progress.mode, "milestones");
+    assert.equal(peopleState.progress.status, "partial");
+    assert.equal(peopleState.people.find(person => person.upn === "review@example.invalid").org, "Unknown");
+    assert.equal(peopleState.people.find(person => person.upn === "demo@example.invalid").org, "ATU", "Primary discovery also preserves local corrections");
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, "-milestone-people.png"));
+    }
+    await clickAccessible("Close Organization discovery");
+    await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    await click("Milestones");
+    await wait(() => js("Boolean(document.querySelector('.milestone-table-wrap'))"));
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.milestone-facet')].find(field => field.querySelector('label').textContent === 'Owner org');
+      const input = field.querySelector('input'); input.focus(); input.click();
+    })()`);
+    await wait(() => js("Boolean(document.querySelector('[role=menuitemcheckbox]'))"));
+    await js(`[...document.querySelectorAll('[role=menuitemcheckbox]')].find(option => option.textContent.startsWith('ATU (')).click()`);
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
+    await wait(() => js("document.querySelector('.milestone-count').textContent.includes('Showing 90 of 180')"));
+    assert.equal(await js("document.querySelector('[data-milestone-id] td[data-column=ownerOrg]').textContent.includes('ATU')"), true);
+    const exported = exportedMilestones.length;
+    await click("Export Excel");
+    await wait(() => exportedMilestones.length === exported + 1);
+    assert.equal(exportedMilestones.at(-1).rowCount, 90, "Organization export includes all filtered pages");
+    const ExcelJS = require("exceljs");
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.readFile(exportedMilestones.at(-1).path);
+    const sheet = book.getWorksheet("Milestones");
+    const column = sheet.getRow(1).values.indexOf("Owner org (current cached)");
+    assert.equal(sheet.getCell(2, column).value, "ATU");
+    assert.ok(JSON.stringify(book.getWorksheet("View").getSheetValues()).includes((await organizationService.getState()).revision));
+    await click("Settings");
+    await wait(() => js("Boolean(document.querySelector('.organization-section'))"));
   };
   const checkPortfolioCards = async () => {
     await wait(() => js("document.querySelectorAll('.territory-account-group').length === 2"));
@@ -1001,6 +1216,8 @@ if (!process.versions.electron) {
     const { VaultStore } = require(join(root, "dist-main", "main", "storage", "vault.js"));
     const { PortfolioService } = require(join(root, "dist-main", "main", "portfolio-service.js"));
     const { MilestoneExporter } = require(join(root, "dist-main", "main", "milestone-export.js"));
+    const { OrgService } = require(join(root, "dist-main", "main", "org-service.js"));
+    const { enrichOrgDataset } = require(join(root, "dist-main", "domain", "org-milestones.js"));
     const { milestoneExportSchema, msxLinkSchema } = require(join(root, "dist-main", "main", "ipc.js"));
     ipcMain.handle(IPC.openExternal, (_event, url) => { openedMilestoneLinks.push(msxLinkSchema.parse(url)); });
     ipcMain.handle(IPC.copyMsxLink, (_event, url) => {
@@ -1070,8 +1287,8 @@ if (!process.versions.electron) {
     }
     const downloadPath = join(process.env.CSU_SMOKE_DATA, "Downloads");
     require("node:fs").mkdirSync(downloadPath);
-    const milestoneExporter = new MilestoneExporter((ids, history) => history ? milestoneService.history.getMilestones(history, ids) :
-      milestoneService.getMilestones(ids), () => downloadPath,
+    const milestoneExporter = new MilestoneExporter(async (ids, history) => enrichOrgDataset(
+      history ? milestoneService.history.getMilestones(history, ids) : milestoneService.getMilestones(ids), await organizationService.getState()), () => downloadPath,
       path => { revealedMilestones.push(path); });
     ipcMain.handle(IPC.getMilestones, () => {
       if (milestoneReadFailure) throw new Error("Synthetic saved-data read failed.");
@@ -1104,6 +1321,76 @@ if (!process.versions.electron) {
     ipcMain.handle(IPC.aiTest, (_event, config) => aiService.testAi(config));
     ipcMain.handle(IPC.workiqTest, (_event, config) => aiService.testWorkiq(config));
     ipcMain.handle(IPC.aiCancel, () => aiService.cancel());
+    organizationService = new OrgService(milestoneStore, {
+      getIdentity: async () => signedIn ? { key: "synthetic-msx-account", upn: "demo@example.invalid", name: "Demo Manager" } : null,
+      getConnection: () => aiService.getState(),
+      resolveActors: async () => [
+        { msxUserId: syntheticOrgOwnerId, upn: "demo@example.invalid" },
+        { msxUserId: "00000000-0000-4000-8000-000000000094", upn: "engineer@example.invalid" },
+        { msxUserId: "00000000-0000-4000-8000-000000000095", upn: "unavailable@example.invalid" },
+        { msxUserId: "00000000-0000-4000-8000-000000000096", upn: "review@example.invalid" },
+        { msxUserId: "00000000-0000-4000-8000-000000000097", upn: "engineer@example.invalid" },
+      ],
+      openSession: async () => {
+        let closed = false;
+        return {
+        query: async (upn, includeReports, signal, options) => {
+          orgQueries.push({ upn, includeReports, ...(options?.profileOnly ? { profileOnly: true } : {}) });
+          if (upn === "unavailable@example.invalid") {
+            const { OrgResponseError } = require(join(root, "dist-main", "main", "org-workiq.js"));
+            throw new OrgResponseError("Work IQ omitted a required profile.");
+          }
+          const person = orgProfiles[upn];
+          assert.ok(person, "Only known synthetic directory profiles may be queried");
+          if (includeReports && upn === "head@example.invalid" && pauseNextOrganization) {
+            pauseNextOrganization = false;
+            await new Promise((resolve, reject) => {
+              const abort = () => { resumeOrganization = null; reject(signal.reason); };
+              resumeOrganization = () => { signal.removeEventListener("abort", abort); resumeOrganization = null; resolve(); };
+              signal.addEventListener("abort", abort, { once: true });
+            });
+          }
+          signal.throwIfAborted();
+          const parent = { "demo@example.invalid": "lead@example.invalid", "lead@example.invalid": "head@example.invalid",
+            "head@example.invalid": "above@example.invalid", "connector@example.invalid": "head@example.invalid",
+            "engineer@example.invalid": "connector@example.invalid", "executive@example.invalid": "connector@example.invalid" };
+          const children = { "head@example.invalid": ["lead@example.invalid", "connector@example.invalid"],
+            "lead@example.invalid": ["demo@example.invalid"], "connector@example.invalid": ["engineer@example.invalid", "executive@example.invalid"] };
+          return {
+            person, manager: orgProfiles[parent[person.upn]] ?? null,
+            reports: includeReports ? (children[person.upn] ?? []).map(key => orgProfiles[key]) : [],
+            complete: !includeReports || person.upn !== "head@example.invalid",
+            limitations: includeReports && person.upn === "head@example.invalid" ? ["Synthetic report list is incomplete."] : [],
+          };
+        },
+          close: async () => { if (!closed) { closed = true; closedOrgSessions++; } },
+        };
+      },
+    });
+    organizationAi = aiService;
+    const catalogFile = join(process.env.CSU_SMOKE_DATA, "synthetic-org-catalog.json");
+    const invalidCatalogFile = join(process.env.CSU_SMOKE_DATA, "invalid-org-catalog.json");
+    require("node:fs").writeFileSync(catalogFile, JSON.stringify({
+      generatedAt: "2020-01-01T00:00:00Z",
+      people: [{ displayName: "Demo Manager", userPrincipalName: "demo@example.invalid", jobTitle: "Example imported role", org: "ISD" }],
+    }));
+    require("node:fs").writeFileSync(invalidCatalogFile, "{invalid");
+    ipcMain.handle(IPC.organizationState, () => organizationService.getState());
+    ipcMain.handle(IPC.organizationImport, () => organizationService.importCatalog(async () => {
+      if (catalogSelection === "cancel") return null;
+      const { readOrgCatalog } = require(join(root, "dist-main", "main", "org-catalog.js"));
+      return readOrgCatalog(catalogSelection === "invalid" ? invalidCatalogFile : catalogFile);
+    }));
+    ipcMain.handle(IPC.organizationRefreshLinks, () => organizationService.refreshLinks());
+    ipcMain.handle(IPC.organizationDiscover, (event, mode = "milestones") => {
+      const onProgress = progress => event.sender.send(IPC.organizationProgress, progress);
+      return mode === "milestones" ? organizationService.discoverMilestonePeople(onProgress) : organizationService.discover(onProgress);
+    });
+    ipcMain.handle(IPC.organizationCancel, () => organizationService.cancel());
+    ipcMain.handle(IPC.organizationSave, (_event, input) => organizationService.savePerson(input));
+    ipcMain.handle(IPC.organizationRemove, (_event, id) => organizationService.removePerson(id));
+    ipcMain.handle(IPC.searchUsers, () => [{ id: syntheticOrgOwnerId, name: "Demo Manager",
+      email: "demo@example.invalid", jobTitle: "Cloud Solution Architect" }]);
     const bootstrap = () => {
       const settings = { ...savedSettings };
       settings.privacyAccepted = privacyAccepted;
@@ -1177,6 +1464,7 @@ if (!process.versions.electron) {
     ipcMain.handle(IPC.fetchAccounts, (_event, id) => milestoneService.fetchAccounts(id,
       progress => window.webContents.send(IPC.fetchProgress, progress)));
     ipcMain.handle(IPC.resetSetup, async () => {
+      await organizationService.clear();
       await aiService.reset();
       resetCalls++;
       signedIn = false;
@@ -1207,6 +1495,22 @@ if (!process.versions.electron) {
         offscreen: Boolean(process.env.MCAPS_SMOKE_SCREENSHOT), backgroundThrottling: false,
       },
     });
+    if (process.env.MCAPS_ORG_SMOKE_ONLY) {
+      signedIn = true;
+      configured = true;
+      await window.loadFile(join(root, "dist-renderer", "index.html"));
+      await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+      await click("Settings");
+      await wait(() => js("Boolean(document.querySelector('.ai-connections'))"));
+      await checkAiConnections();
+      await checkOrganization();
+      console.log("Organization UI smoke passed: Work IQ gating, boundary discovery, progress reload/cancellation, local CRUD, persistence, org filters and full-result XLSX export.");
+      window.destroy();
+      await new Promise(resolve => setImmediate(resolve));
+      milestoneStore.close();
+      app.quit();
+      return;
+    }
     await window.loadFile(join(root, "dist-renderer", "index.html"));
     await wait(() => js("Boolean(document.querySelector('.startup-updates summary'))"));
     await wait(() => js("document.body.innerText.includes('Updated to 0.3.0.')"));
@@ -1316,6 +1620,7 @@ if (!process.versions.electron) {
     await wait(() => js("Boolean(document.querySelector('.updates-panel'))"));
     await wait(() => js("document.querySelector('.settings-profile').innerText.includes('Demo role')"));
     await checkAiConnections();
+    await checkOrganization();
     assert.equal(await js("document.body.innerText.includes('Connect Microsoft 365 profile')"), false);
     const refreshesBefore = profileRefreshes;
     await click("Refresh MSX profile");
@@ -1360,9 +1665,10 @@ if (!process.versions.electron) {
     assert.equal(await js("document.querySelector('.sidebar button[aria-label=\"Team\"]') === null"), true, "Reset restores Team off");
     assert.equal(await js("Boolean(document.querySelector('.sidebar button[aria-label=\"PODs\"]'))"), true, "Reset restores PODs on");
     assert.equal(territoryRefreshes, 1, "Legacy territory metadata is loaded once and reused across workspace navigation");
-    console.log("MCAPS UI smoke passed: milestones workspace, real local XLSX exports, grouping, resizing and frozen columns; persistent Team/POD switches and collapsed navigation at three widths in both themes; existing AI/Work IQ, Settings layout, portfolio, changes, scrolling, onboarding, reset and updates.");
-    milestoneStore.close();
+    console.log("MCAPS UI smoke passed: organization discovery/progress, Work IQ gating, local CRUD, persistence, org filters and XLSX; milestones workspace, grouping, column preferences, Team/PODs and navigation in both themes at three widths; history, live fetch, onboarding, reset and updates.");
     window.destroy();
+    await new Promise(resolve => setImmediate(resolve));
+    milestoneStore.close();
     app.exit(0);
   }).catch((error) => {
     console.error(error);

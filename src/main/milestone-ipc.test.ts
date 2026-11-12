@@ -26,6 +26,10 @@ describe("milestone export IPC validation", () => {
 
   it("accepts bounded local scope/view requests but no renderer-selected file paths or extra workbook fields", () => {
     expect(milestoneExportSchema.parse(request())).toEqual(request());
+    const isd = request();
+    isd.view.filters.creatorOrg = ["ISD"];
+    expect(milestoneExportSchema.parse(isd).view.filters.creatorOrg).toEqual(["ISD"]);
+    expect(milestoneExportSchema.parse({ ...request(), orgRevision: "" }).orgRevision).toBe("");
     const history = { accountId: "portfolio", runId: "2026-10-01T10:00:00.000Z" };
     expect(milestoneExportSchema.parse({ ...request(), history }).history).toEqual(history);
     expect(milestoneExportSchema.safeParse({ ...request(), history: { ...history, path: "C:\\outside" } }).success).toBe(false);

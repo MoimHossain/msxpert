@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { RestartRequest, UpdateState } from "../shared/updates";
 import type { FetchProgress } from "../shared/fetch";
+import type { OrgProgress } from "../shared/organization";
 import type {
   AppSettings,
   DesktopApi,
@@ -36,6 +37,15 @@ const IPC = {
   aiTest: "ai:test",
   workiqTest: "ai:workiq-test",
   aiCancel: "ai:cancel",
+  organizationState: "organization:state",
+  organizationImport: "organization:import",
+  organizationRefreshLinks: "organization:refresh-links",
+  organizationDiscover: "organization:discover",
+  organizationCancel: "organization:cancel",
+  organizationSave: "organization:save",
+  organizationRemove: "organization:remove",
+  organizationProgress: "organization:progress",
+  organizationChanged: "organization:changed",
   listTerritories: "territories:list",
   previewTerritoryImport: "territories:preview",
   importTerritories: "territories:import",
@@ -69,6 +79,23 @@ const IPC = {
 } as const;
 
 const api: DesktopApi = {
+  getOrganization: () => ipcRenderer.invoke(IPC.organizationState),
+  importOrganizationCatalog: () => ipcRenderer.invoke(IPC.organizationImport),
+  refreshOrganizationLinks: () => ipcRenderer.invoke(IPC.organizationRefreshLinks),
+  discoverOrganization: mode => ipcRenderer.invoke(IPC.organizationDiscover, mode),
+  cancelOrganization: () => ipcRenderer.invoke(IPC.organizationCancel),
+  saveOrganizationPerson: input => ipcRenderer.invoke(IPC.organizationSave, input),
+  removeOrganizationPerson: id => ipcRenderer.invoke(IPC.organizationRemove, id),
+  onOrganizationProgress: listener => {
+    const handler = (_event: IpcRendererEvent, progress: OrgProgress) => listener(progress);
+    ipcRenderer.on(IPC.organizationProgress, handler);
+    return () => { ipcRenderer.removeListener(IPC.organizationProgress, handler); };
+  },
+  onOrganizationChanged: listener => {
+    const handler = () => listener();
+    ipcRenderer.on(IPC.organizationChanged, handler);
+    return () => { ipcRenderer.removeListener(IPC.organizationChanged, handler); };
+  },
   getAiConnections: () => ipcRenderer.invoke(IPC.aiConnections),
   testAiAccess: (config) => ipcRenderer.invoke(IPC.aiTest, config),
   testWorkiqAccess: (config) => ipcRenderer.invoke(IPC.workiqTest, config),

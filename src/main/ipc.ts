@@ -1,4 +1,4 @@
-import { app, clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
 import type { AuthService } from "./auth";
 import { AuthRequiredError } from "./auth";
@@ -11,6 +11,10 @@ import { aiConfigurationSchema, workiqConfigurationSchema } from "../shared/ai";
 import { FACET_KEYS, SORT_KEYS, MAX_EXPORT_ROWS } from "../shared/milestones";
 import { MilestoneExporter } from "./milestone-export";
 import { filterIssue } from "../domain/milestone-view";
+import type { OrgService } from "./org-service";
+import { ORG_UNITS, orgDiscoveryModeSchema, orgPersonInputSchema, type OrgProgress } from "../shared/organization";
+import { readOrgCatalog } from "./org-catalog";
+import { enrichOrgDataset } from "../domain/org-milestones";
 
 const idSchema = z.string().min(1).max(200);
 const nullableText = z.string().max(4000).nullable();
@@ -22,13 +26,16 @@ export const msxLinkSchema = z.url().refine(url => {
   return parsed.protocol === "https:" && parsed.origin === MSX_ORIGIN;
 }, "Only Microsoft Sales links are allowed.");
 export const milestoneExportSchema = z.object({
+  orgRevision: z.string().max(200).optional(),
   history: z.object({ accountId: idSchema, runId: z.iso.datetime() }).strict().optional(),
   accountIds: z.array(idSchema).min(1).max(2000).refine(ids => new Set(ids).size === ids.length, "Duplicate portfolio accounts."),
   expectedIds: z.array(idSchema).min(1).max(MAX_EXPORT_ROWS).refine(ids => new Set(ids).size === ids.length, "Duplicate milestones."),
   expectedHash: z.string().regex(/^[a-f0-9]{64}$/),
   view: z.object({
     filters: z.object({
-      search: z.string().max(4000), status: facetValues, owner: facetValues, creator: facetValues, portfolio: facetValues,
+      search: z.string().max(4000), status: facetValues, owner: facetValues, creator: facetValues,
+      creatorOrg: z.array(z.enum(ORG_UNITS)).max(ORG_UNITS.length),
+      ownerOrg: z.array(z.enum(ORG_UNITS)).max(ORG_UNITS.length), portfolio: facetValues,
       account: facetValues, commitment: facetValues, month: facetValues, solutionArea: facetValues,
       azureRegion: facetValues, workload: facetValues, dateFrom: dateBound, dateTo: dateBound,
       minMonthlyUse: z.string().max(100), maxMonthlyUse: z.string().max(100),
@@ -110,9 +117,20 @@ export function registerIpc(
   gate: OperationGate,
   isTrusted: (event: IpcMainInvokeEvent) => boolean,
   ai: AiService,
-  exporter = new MilestoneExporter((ids, history) => history ? service.history.getMilestones(history, ids) : service.getMilestones(ids),
-    () => app.getPath("downloads"), path => shell.showItemInFolder(path)),
+  exporter?: MilestoneExporter,
+  organization?: OrgService,
 ): void {
+  const milestoneExporter = exporter ?? new MilestoneExporter(async (ids, history) => {
+    const dataset = history ? service.history.getMilestones(history, ids) : service.getMilestones(ids);
+    return organization ? enrichOrgDataset(dataset, await organization.getState()) : dataset;
+  }, () => app.getPath("downloads"), path => shell.showItemInFolder(path));
+  const org = () => {
+    if (!organization) throw new Error("Organization discovery is unavailable in this runtime.");
+    return organization;
+  };
+  const connectionIdle = () => {
+    if (organization?.busy) throw new Error("Stop organization discovery before changing AI or Work IQ connections.");
+  };
   function handle(channel: string, handler: (input: unknown) => unknown): void {
     ipcMain.handle(channel, (event, input: unknown) => {
       if (!isTrusted(event)) throw new Error("Untrusted application request.");
@@ -129,15 +147,45 @@ export function registerIpc(
   }
   handle(IPC.bootstrap, () => service.bootstrap(dataPath));
   handle(IPC.aiConnections, () => ai.getState());
-  register(IPC.aiTest, aiConfigurationSchema, (config) => ai.testAi(config));
-  register(IPC.workiqTest, workiqConfigurationSchema, (config) => ai.testWorkiq(config));
+  register(IPC.aiTest, aiConfigurationSchema, (config) => { connectionIdle(); return ai.testAi(config); });
+  register(IPC.workiqTest, workiqConfigurationSchema, (config) => { connectionIdle(); return ai.testWorkiq(config); });
   handle(IPC.aiCancel, () => ai.cancel());
+  handle(IPC.organizationState, () => org().getState());
+  handle(IPC.organizationRefreshLinks, () => org().refreshLinks());
+  ipcMain.handle(IPC.organizationImport, async event => {
+    if (!isTrusted(event)) throw new Error("Untrusted application request.");
+    return gate.run(() => org().importCatalog(async () => {
+      const owner = BrowserWindow.fromWebContents(event.sender);
+      if (!owner) throw new Error("The organization import window is unavailable.");
+      const result = await dialog.showOpenDialog(owner, {
+        title: "Import organization catalog", defaultPath: app.getPath("downloads"),
+        filters: [{ name: "Organization catalog (JSON)", extensions: ["json"] }],
+        properties: ["openFile", "dontAddToRecent"],
+      });
+      if (result.canceled) return null;
+      const selected = result.filePaths[0];
+      if (!selected) throw new Error("No organization catalog file was selected.");
+      return readOrgCatalog(selected);
+    }));
+  });
+  handle(IPC.organizationCancel, () => org().cancel());
+  register(IPC.organizationSave, orgPersonInputSchema, input => org().savePerson(input));
+  register(IPC.organizationRemove, z.uuid(), id => org().removePerson(id));
+  ipcMain.handle(IPC.organizationDiscover, async (event, input) => {
+    if (!isTrusted(event)) throw new Error("Untrusted application request.");
+    const mode = orgDiscoveryModeSchema.default("milestones").parse(input);
+    const onProgress = (progress: OrgProgress) => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC.organizationProgress, progress);
+    };
+    return gate.run(() => mode === "milestones" ? org().discoverMilestonePeople(onProgress) : org().discover(onProgress));
+  });
   ipcMain.handle(IPC.resetSetup, async (event) => {
     if (!isTrusted(event)) throw new Error("Untrusted application request.");
     if (!gate.tryLock("Setup is being reset. Wait for the first-run screen.")) {
       throw new Error("Finish active work or updates before resetting setup.");
     }
     try {
+      if (organization) await organization.clear();
       await ai.reset();
       return await service.resetSetup(dataPath);
     } finally {
@@ -149,6 +197,7 @@ export function registerIpc(
     return auth.getState(await msx.getMyUserId());
   });
   handle(IPC.signOut, async () => {
+    if (organization) await organization.cancel();
     await ai.disconnect();
     const state = await auth.signOut();
     service.profiles.clear();
@@ -192,8 +241,9 @@ export function registerIpc(
     ({ accountId, deleteHistory }) => service.removeAccount(accountId, deleteHistory),
   );
   handle(IPC.getOverview, () => service.getOverview());
-  handle(IPC.getMilestones, () => service.getMilestones());
-  register(IPC.exportMilestones, milestoneExportSchema, request => exporter.export(request));
+  handle(IPC.getMilestones, async () => organization ?
+    enrichOrgDataset(service.getMilestones(), await organization.getState()) : service.getMilestones());
+  register(IPC.exportMilestones, milestoneExportSchema, request => milestoneExporter.export(request));
   handle(IPC.refreshAccountTerritories, () => service.refreshAccountTerritories());
   register(IPC.getAccountState, idSchema, (accountId) =>
     service.getAccountState(accountId),
@@ -208,9 +258,14 @@ export function registerIpc(
     const accountId = idSchema.optional().parse(input);
     return gate.run(async () => {
       try {
-        return await service.fetchAccounts(accountId, progress => {
+        const result = await service.fetchAccounts(accountId, progress => {
           if (!event.sender.isDestroyed()) event.sender.send(IPC.fetchProgress, progress);
         });
+        if (organization) {
+          await organization.refreshLinks();
+          if (!event.sender.isDestroyed()) event.sender.send(IPC.organizationChanged);
+        }
+        return result;
       } catch (error) {
         if (error instanceof AuthRequiredError) event.sender.send(IPC.authRequired);
         throw error;

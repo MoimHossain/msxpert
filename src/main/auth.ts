@@ -146,6 +146,12 @@ export class AuthService {
     return (await this.firstAccount())?.homeAccountId ?? null;
   }
 
+  async getAccountIdentity(): Promise<{ key: string; upn: string; name: string } | null> {
+    const account = await this.firstAccount();
+    if (!account?.homeAccountId || !account.username) return null;
+    return { key: account.homeAccountId, upn: account.username, name: account.name ?? account.username };
+  }
+
   async getCachedState(): Promise<AuthState> {
     const account = await this.firstAccount();
     return { signedIn: false, checking: Boolean(account), name: account?.name ?? null,

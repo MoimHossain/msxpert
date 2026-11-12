@@ -12,6 +12,8 @@ import { ArrowReset24Regular } from "@fluentui/react-icons";
 import { Avatar } from "@fluentui/react-components";
 import { ErrorBanner } from "../ui/ErrorBanner";
 import { AiConnectionsPanel } from "./AiConnectionsPanel";
+import { OrganizationSection } from "../organization/OrganizationSection";
+import { useOrganization } from "../../state/OrganizationProvider";
 import { useTheme } from "../../state/ThemeProvider";
 import { Checkbox, Radio, RadioGroup } from "@fluentui/react-components";
 
@@ -21,6 +23,7 @@ export function SettingsView() {
   const { navigate } = useNavigation();
   const { notify } = useToast();
   const { theme, toggleTheme } = useTheme();
+  const { setConnectionValidity } = useOrganization();
 
   const [signingOut, setSigningOut] = useState(false);
   const [refreshingProfile, setRefreshingProfile] = useState(false);
@@ -70,7 +73,8 @@ export function SettingsView() {
         </RadioGroup>
       </section>
 
-      <AiConnectionsPanel />
+      <AiConnectionsPanel onConnectionValidityChange={setConnectionValidity} />
+      <OrganizationSection />
 
       <section className="settings-section">
         <h2>Identity</h2>

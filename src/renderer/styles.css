@@ -2562,3 +2562,225 @@ legend {
   padding: 0;
   margin-bottom: 8px;
 }
+
+/* Organization discovery and local management stay inside the right drawer. */
+.console-side-panel.console-side-panel:has(.organization-drawer),
+.console-side-panel:has(.organization-drawer) .fui-DrawerHeader,
+.console-side-panel:has(.organization-drawer) .fui-DrawerBody {
+  background: var(--color-bg-elevated);
+}
+
+.console-side-panel.console-side-panel:has(.organization-drawer) {
+  /* Keep the surface opaque even during Fluent's entering motion. */
+  opacity: 1 !important;
+}
+
+.organization-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.organization-drawer p,
+.organization-drawer h3,
+.organization-drawer h4,
+.organization-drawer dl {
+  margin: 0;
+}
+
+.organization-drawer h3,
+.organization-drawer h4 {
+  margin-bottom: 8px;
+}
+
+.organization-actions,
+.organization-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.organization-section > .organization-actions {
+  margin: 16px 0;
+}
+
+.organization-boundary,
+.organization-person,
+.organization-editor {
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  min-width: 0;
+}
+
+.organization-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
+  gap: 12px;
+}
+
+.organization-counts > div {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+}
+
+.organization-counts dt,
+.organization-person-details dt {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.organization-counts dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.organization-warning-list,
+.organization-log {
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 12px 12px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+}
+
+.organization-log {
+  list-style: none;
+  padding-left: 12px;
+  font-size: 12px;
+}
+
+.organization-log li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.organization-log time {
+  color: var(--color-text-secondary);
+}
+
+.organization-directory-filters,
+.organization-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.organization-drawer .field,
+.organization-drawer .fui-Input,
+.organization-drawer .fui-Select,
+.organization-drawer input,
+.organization-drawer fieldset {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.organization-people,
+.organization-links,
+.organization-user-results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.organization-person-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.organization-person-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 24px;
+  padding: 16px 0;
+}
+
+.organization-person-details dd {
+  margin: 2px 0 0;
+}
+
+.organization-editor,
+.organization-editor fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.organization-user-results {
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.organization-user-results li,
+.organization-links li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.organization-user-results li > div,
+.organization-links li > span {
+  min-width: 0;
+}
+
+.organization-drawer-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.organization-progress-reopen {
+  position: fixed;
+  right: 24px;
+  bottom: 110px;
+  z-index: 20;
+  max-width: calc(100vw - 48px);
+  padding: 10px 16px;
+  border: 1px solid var(--color-brand);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .organization-person-heading { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 640px) {
+  .organization-directory-filters,
+  .organization-form-grid,
+  .organization-person-details { grid-template-columns: minmax(0, 1fr); }
+  .organization-user-results li,
+  .organization-links li { flex-wrap: wrap; }
+  .organization-log li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .organization-boundary,
+  .organization-person,
+  .organization-editor { padding: 12px; }
+}

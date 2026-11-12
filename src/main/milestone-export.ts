@@ -5,12 +5,17 @@ import ExcelJS from "exceljs";
 import type { MilestoneRow } from "../shared/types";
 import { FACET_KEYS, MAX_EXPORT_ROWS, type MilestoneDataset, type MilestoneExportRequest, type MilestoneExportResult } from "../shared/milestones";
 import { FACET_LABELS, facetLabel, filterIssue, orderedMilestones } from "../domain/milestone-view";
+import { orgMilestoneCoverage } from "../domain/org-milestones";
 
 const COLUMNS = [
   ["name", "Milestone", 60], ["number", "Number", 20], ["date", "Date", 16],
   ["status", "Status", 20], ["commitment", "Commitment", 20], ["monthlyUse", "Monthly use (source units)", 25],
   ["monthlyUseFormatted", "Monthly use (MSX display)", 25], ["ownerName", "Owner", 30],
+  ["ownerOrg", "Owner org (current cached)", 25], ["ownerOrgBasis", "Owner org evidence", 25],
+  ["ownerOrgCheckedAt", "Owner org checked (UTC)", 28],
   ["createdByName", "Raised By", 30], ["createdById", "Raised By (MSX user ID)", 40],
+  ["creatorOrg", "Creator org (current cached)", 25], ["creatorOrgBasis", "Creator org evidence", 25],
+  ["creatorOrgCheckedAt", "Creator org checked (UTC)", 28],
   ["portfolioAccountName", "Portfolio account", 35], ["portfolioTpid", "TPID", 18],
   ["accountName", "MSX account", 35], ["solutionArea", "Solution area", 28], ["azureRegion", "Azure region", 25],
   ["workload", "Workload", 30], ["opportunityName", "Opportunity", 40], ["statusReason", "Status reason", 45],
@@ -40,7 +45,7 @@ export async function buildMilestoneWorkbook(
   sheet.columns = COLUMNS.map(([key, header, width]) => ({ key, header, width }));
   for (const milestone of rows) {
     const values = COLUMNS.map(([key]) => {
-      const value = milestone[key];
+      const value = (key === "creatorOrg" || key === "ownerOrg") ? milestone[key] ?? "Unknown" : milestone[key];
       assertCell(value);
       if (key === "date" && value) {
         const calendarDate = String(value).slice(0, 10);
@@ -58,6 +63,7 @@ export async function buildMilestoneWorkbook(
   }
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: COLUMNS.length } };
   const metadata = workbook.addWorksheet("View");
+  const coverage = orgMilestoneCoverage(rows);
   metadata.columns = [{ width: 30 }, { width: 100 }];
   metadata.addRows([
     ["Setting", "Value"],
@@ -68,6 +74,10 @@ export async function buildMilestoneWorkbook(
     ["Capture window note", request.history ? "Original scope at this fetch. Later refreshes do not change this snapshot." :
       "Saved records may reflect an earlier scope until refreshed from Portfolio."],
     ["Capture status exclusions", dataset.scope.excludedStatusLabels.join("; ") || "None"],
+    ["Organization evidence", "Current cached role inference or local confirmation, not official membership at milestone creation or capture time."],
+    ["Organization cache revision", dataset.orgRevision || "No organization cache"],
+    ["Creator org coverage (filtered milestones)", `${coverage.creators} / ${rows.length}`],
+    ["Owner org coverage (filtered milestones)", `${coverage.owners} / ${rows.length}`],
     ["Privacy", "This unencrypted export is outside the app vault. Handle it under your organization's data policies."],
     ["Sort", `${request.view.sortKey} ${request.view.sortDirection}`],
     ["Grouping", request.view.groupBy.map(key => FACET_LABELS[key]).join(" > ") || "None"],
@@ -95,7 +105,7 @@ export async function buildMilestoneWorkbook(
 export class MilestoneExporter {
   private inFlight: Promise<MilestoneExportResult> | null = null;
   constructor(
-    private readonly load: (accountIds: string[], history?: MilestoneExportRequest["history"]) => MilestoneDataset,
+    private readonly load: (accountIds: string[], history?: MilestoneExportRequest["history"]) => MilestoneDataset | Promise<MilestoneDataset>,
     private readonly downloads: () => string,
     private readonly reveal: (path: string) => void,
   ) {}
@@ -117,7 +127,10 @@ export class MilestoneExporter {
   private async perform(request: MilestoneExportRequest): Promise<MilestoneExportResult> {
     const issue = filterIssue(request.view.filters);
     if (issue) throw new Error(issue);
-    const dataset = this.load(request.accountIds, request.history);
+    const dataset = await this.load(request.accountIds, request.history);
+    if (request.orgRevision !== undefined && request.orgRevision !== dataset.orgRevision) {
+      throw new Error("Organization classifications changed. Reload this view before exporting.");
+    }
     const rows = orderedMilestones(dataset.milestones, request.view);
     if (rows.length !== request.expectedIds.length || rows.some((row, index) => row.id !== request.expectedIds[index]) ||
       milestoneHash(rows) !== request.expectedHash) {

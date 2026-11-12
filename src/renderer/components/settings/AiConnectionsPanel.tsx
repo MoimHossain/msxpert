@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AiConfiguration, AiConnectionsState, ConnectionTestResult, WorkiqConfiguration } from "../../../shared/ai";
 import { useUpdateBlocker } from "../../state/UpdateProvider";
 import { Button } from "../ui/Button";
@@ -18,7 +18,9 @@ function TestOutcome({ result }: { result: ConnectionTestResult | null }) {
   );
 }
 
-export function AiConnectionsPanel() {
+export function AiConnectionsPanel({ onConnectionValidityChange }: {
+  onConnectionValidityChange?: (valid: boolean) => void;
+}) {
   const [state, setState] = useState<AiConnectionsState | null>(null);
   const [ai, setAi] = useState<AiConfiguration>({ runtimePath: "", model: "" });
   const [workiq, setWorkiq] = useState<WorkiqConfiguration>({ executablePath: "", tenantId: "" });
@@ -31,7 +33,11 @@ export function AiConnectionsPanel() {
   const dirtyAi = state !== null && (ai.runtimePath !== state.ai.runtimePath || ai.model !== state.ai.model);
   const dirtyWorkiq = state !== null && (workiq.executablePath !== state.workiq.executablePath || workiq.tenantId !== state.workiq.tenantId);
   const aiReady = !dirtyAi && state?.aiTest?.status === "success";
+  const workiqReady = Boolean(aiReady && !dirtyWorkiq && state?.workiqTest?.status === "success" && !loading && !testing && !error);
   useUpdateBlocker(Boolean(testing) || dirtyAi || dirtyWorkiq);
+  useLayoutEffect(() => {
+    onConnectionValidityChange?.(workiqReady);
+  }, [workiqReady, onConnectionValidityChange]);
 
   const load = async () => {
     setLoading(true);

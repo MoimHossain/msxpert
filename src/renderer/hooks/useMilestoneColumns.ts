@@ -5,12 +5,14 @@ import { useToast } from "../state/ToastProvider";
 export const COLUMN_LABELS: Record<MilestoneSortKey, string> = {
   name: "Milestone", number: "Number", date: "Date", status: "Status", commitment: "Commitment",
   monthlyUse: "Monthly use", ownerName: "Owner", createdByName: "Raised By", portfolioAccountName: "Portfolio account",
+  creatorOrg: "Creator org", ownerOrg: "Owner org",
   accountName: "MSX account", solutionArea: "Solution area", azureRegion: "Azure region",
   workload: "Workload", opportunityName: "Opportunity",
 };
 const DEFAULT_WIDTHS: Record<MilestoneSortKey, number> = {
   name: 360, number: 145, date: 130, status: 140, commitment: 155, monthlyUse: 155,
   ownerName: 220, createdByName: 220, portfolioAccountName: 230, accountName: 230, solutionArea: 190,
+  creatorOrg: 150, ownerOrg: 150,
   azureRegion: 180, workload: 210, opportunityName: 250,
 };
 const STORAGE_KEY = "csu-console-milestone-columns-v1";
@@ -29,8 +31,8 @@ export function readMilestoneColumnLayout(text: string): ColumnLayout {
   const widths = { ...DEFAULT_WIDTHS };
   for (const key of SORT_KEYS) {
     const width = parsed.widths[key];
-    // Older saved layouts predate the Raised By column.
-    if (key === "createdByName" && width === undefined) continue;
+    // Added columns must not discard an older saved layout.
+    if (["createdByName", "creatorOrg", "ownerOrg"].includes(key) && width === undefined) continue;
     if (typeof width !== "number" || !Number.isFinite(width)) throw new Error("Invalid column width.");
     widths[key] = Math.max(minimumWidth(key), Math.min(900, width));
   }

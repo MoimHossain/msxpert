@@ -21,6 +21,7 @@ import { UpdateProvider } from "./state/UpdateProvider";
 import { ToastViewport } from "./components/ui/ToastViewport";
 import { Avatar } from "@fluentui/react-components";
 import { FetchProvider } from "./state/FetchProvider";
+import { OrganizationProvider } from "./state/OrganizationProvider";
 
 function StartupUpdates() {
   const { state } = useAppData();
@@ -153,10 +154,12 @@ export function App() {
         <UpdateProvider>
           <AppDataProvider>
             <FetchProvider>
+            <OrganizationProvider>
             <NavigationProvider>
               <AppContent />
               <StartupUpdates />
             </NavigationProvider>
+            </OrganizationProvider>
             </FetchProvider>
           </AppDataProvider>
         </UpdateProvider>

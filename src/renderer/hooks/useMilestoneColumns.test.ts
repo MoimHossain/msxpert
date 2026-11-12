@@ -17,6 +17,17 @@ describe("saved milestone column preferences", () => {
     expect(readMilestoneColumnLayout(JSON.stringify(old))).toEqual({
       ...old, widths: { ...old.widths, createdByName: 220 },
     });
+
+  });
+
+  it("adds organization columns without discarding a pre-discovery layout", () => {
+    const old = {
+      widths: Object.fromEntries(SORT_KEYS.filter(key => key !== "creatorOrg" && key !== "ownerOrg").map(key => [key, 420])),
+      frozen: "createdByName", hidden: ["name", "actions"],
+    };
+    expect(readMilestoneColumnLayout(JSON.stringify(old))).toEqual({
+      ...old, widths: { ...old.widths, creatorOrg: 150, ownerOrg: 150 },
+    });
   });
 
   it("retains hidden-column widths and a hidden frozen preference, but not filters or sorting", () => {

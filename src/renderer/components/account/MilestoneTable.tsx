@@ -16,6 +16,8 @@ import { useToast } from "../../state/ToastProvider";
 import { useUpdateBlocker } from "../../state/UpdateProvider";
 import { isSafeExternalUrl } from "../../lib/url";
 import { MsxLink } from "../ui/MsxLink";
+import { useOrganization } from "../../state/OrganizationProvider";
+import { enrichOrgMilestones, orgMilestoneCoverage } from "../../../domain/org-milestones";
 
 interface MilestoneTableProps {
   milestones: MilestoneRow[];
@@ -39,10 +41,20 @@ function cellValue(milestone: MilestoneRow, key: MilestoneSortKey) {
   if (key === "monthlyUse") return milestone.monthlyUseFormatted ?? formatNumber(milestone.monthlyUse);
   if (key === "status") return <Badge tone={statusTone(milestone.status)}>{milestone.status ?? "Unknown"}</Badge>;
   if (key === "commitment") return <Badge tone={commitmentTone(milestone.commitment)}>{milestone.commitment ?? "-"}</Badge>;
+  if (key === "creatorOrg" || key === "ownerOrg") {
+    const org = milestone[key] ?? "Unknown";
+    const basis = key === "creatorOrg" ? milestone.creatorOrgBasis : milestone.ownerOrgBasis;
+    const checked = key === "creatorOrg" ? milestone.creatorOrgCheckedAt : milestone.ownerOrgCheckedAt;
+    return <span title={`${basis ?? "No exact identity link"}${checked ? `; checked ${checked}` : ""}. Current cached role, not creation-time membership.`}>
+      <Badge tone={org === "Unknown" ? "neutral" : org === "CSU" ? "info" : org === "STU" ? "positive" : "warning"}>{org}</Badge>
+    </span>;
+  }
   return <span className="milestone-cell-text">{milestone[key] ?? (key === "ownerName" ? "Unassigned" : "-")}</span>;
 }
 
-export function MilestoneTable({ milestones, initialFilters, history }: MilestoneTableProps) {
+export function MilestoneTable({ milestones: sourceMilestones, initialFilters, history }: MilestoneTableProps) {
+  const { state: organization, loading: orgLoading, error: orgError } = useOrganization();
+  const milestones = useMemo(() => enrichOrgMilestones(sourceMilestones, organization?.people ?? []), [sourceMilestones, organization?.people]);
   const [view, setView] = useState(() => initialMilestoneView(initialFilters));
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(0);
@@ -58,6 +70,7 @@ export function MilestoneTable({ milestones, initialFilters, history }: Mileston
   useUpdateBlocker(exporting);
 
   const ordered = useMemo(() => orderedMilestones(milestones, view), [milestones, view]);
+  const orgCoverage = useMemo(() => orgMilestoneCoverage(ordered), [ordered]);
   const groups = useMemo(() => groupMilestones(ordered, view.groupBy), [ordered, view.groupBy]);
   const pageCount = Math.max(1, Math.ceil(ordered.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
@@ -96,6 +109,7 @@ export function MilestoneTable({ milestones, initialFilters, history }: Mileston
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(ordered)));
       const expectedHash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
       const result = await window.desktop.exportMilestones({
+        ...(organization ? { orgRevision: organization.revision } : {}),
         ...(history ? { history } : {}),
         accountIds: [...new Set(milestones.map(row => row.portfolioAccountId))],
         view, expectedIds: ordered.map(row => row.id), expectedHash,
@@ -146,7 +160,7 @@ export function MilestoneTable({ milestones, initialFilters, history }: Mileston
           <Button variant="ghost" onClick={() => setCollapsed(new Set())} disabled={!collapsed.size}>Expand all</Button>
           <Button variant="ghost" onClick={collapseAll}>Collapse all</Button>
         </> : null}
-        <Button variant="secondary" busy={exporting} disabled={Boolean(issue) || !ordered.length || ordered.length > MAX_EXPORT_ROWS}
+        <Button variant="secondary" busy={exporting} disabled={orgLoading || !organization || Boolean(issue) || !ordered.length || ordered.length > MAX_EXPORT_ROWS}
           onClick={() => void exportExcel()}>Export Excel</Button>
       </div>
       <p className="field-hint milestone-grid-hint">
@@ -154,6 +168,11 @@ export function MilestoneTable({ milestones, initialFilters, history }: Mileston
         The frozen column moves first. Monthly use remains in source units. Export includes all matches, not just this page,
         and saves unencrypted business data to Downloads outside the app vault.
       </p>
+      <p className="field-hint">Creator org and Owner org use current cached role classifications, not membership at creation time.
+        {` Filtered coverage: creator ${orgCoverage.creators}/${ordered.length}; owner ${orgCoverage.owners}/${ordered.length}.`}
+        {!organization?.people.length ? " Discover or manage organization in Settings to classify people." : " Unknown means no exact accepted identity classification."}
+        {milestones.some(row => row.ownerId && !row.ownerEntityType) ? " Refresh older captures to resolve missing owner lookup types." : ""}
+        {orgError ? ` Organization cache could not be loaded: ${orgError}` : ""}</p>
       {ordered.length > MAX_EXPORT_ROWS ? <p className="field-error" role="alert">Narrow the filters to {formatNumber(MAX_EXPORT_ROWS)} or fewer milestones before exporting.</p> : null}
       {exportMessage ? <p className="milestone-export-result" role="status">{exportMessage}</p> : null}
       {!ordered.length ? <EmptyState title={issue ? "Correct the filter bounds" : "No milestones match these filters"}

@@ -14,6 +14,9 @@ import { loadConnectionConfig } from "./connection-config";
 import { AiService } from "./ai-service";
 import { connectionRunners } from "./ai-runtime";
 import { MilestoneExporter } from "./milestone-export";
+import { OrgService } from "./org-service";
+import { enrichOrgDataset } from "../domain/org-milestones";
+import { z } from "zod";
 
 // Keep the Chromium profile as well as the encrypted vault across the rename.
 const userDataPath = join(app.getPath("appData"), LEGACY_APP_NAME);
@@ -30,6 +33,7 @@ let updates: UpdateService | null = null;
 let ai: AiService | null = null;
 let stoppingOperations = false;
 let milestoneExports: MilestoneExporter | null = null;
+let organization: OrgService | null = null;
 
 function isTrustedRequest(event: IpcMainInvokeEvent): boolean {
   return Boolean(mainWindow && event.sender === mainWindow.webContents &&
@@ -111,8 +115,28 @@ if (singleInstance) {
     const portfolio = new PortfolioService(store, auth, msx, app.getVersion());
     const gate = new OperationGate();
     ai = new AiService(store, connectionRunners);
-    milestoneExports = new MilestoneExporter(ids => portfolio.getMilestones(ids), () => app.getPath("downloads"), path => shell.showItemInFolder(path));
-    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai, milestoneExports);
+    const connections = ai;
+    const org = new OrgService(store, {
+      getIdentity: async () => {
+        const identity = await auth.getAccountIdentity();
+        if (!identity || !z.email().safeParse(identity.upn).success) return null;
+        const profile = portfolio.profiles.getCached(identity.key);
+        return { key: `${MSX_ORIGIN}:${identity.key}:${connections.getState().workiq.tenantId}`,
+          upn: identity.upn, name: profile?.displayName ?? identity.name };
+      },
+      getConnection: () => connections.getState(),
+      resolveActors: async signal => {
+        const ids = portfolio.getMilestones().milestones.flatMap(row =>
+          [row.createdById, row.ownerEntityType === "systemuser" ? row.ownerId : null])
+          .filter((id): id is string => z.guid().safeParse(id).success);
+        return msx.resolveOrgActors(ids, signal);
+      },
+    });
+    organization = org;
+    milestoneExports = new MilestoneExporter(async (ids, history) =>
+      enrichOrgDataset(history ? portfolio.history.getMilestones(history, ids) : portfolio.getMilestones(ids), await org.getState()),
+      () => app.getPath("downloads"), path => shell.showItemInFolder(path));
+    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai, milestoneExports, org);
     updates = createUpdateRuntime(dataPath, gate, () => mainWindow, isTrustedRequest);
     await createWindow();
   }).catch((error: unknown) => {
@@ -121,11 +145,11 @@ if (singleInstance) {
   });
 
   app.on("before-quit", (event) => {
-    if (ai?.busy || milestoneExports?.busy) {
+    if (ai?.busy || milestoneExports?.busy || organization?.busy) {
       event.preventDefault();
       if (!stoppingOperations) {
         stoppingOperations = true;
-        void Promise.all([ai?.disconnect(), milestoneExports?.waitForIdle()]).then(() => app.quit()).catch(() => {
+        void Promise.all([organization?.cancel(), ai?.disconnect(), milestoneExports?.waitForIdle()]).then(() => app.quit()).catch(() => {
           console.error("OPERATION_SHUTDOWN_FAILED");
           stoppingOperations = false;
         });

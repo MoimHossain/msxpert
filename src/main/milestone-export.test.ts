@@ -8,6 +8,7 @@ import { defaultSettings } from "../domain/defaults";
 import { initialMilestoneView, orderedMilestones } from "../domain/milestone-view";
 import type { MilestoneExportRequest } from "../shared/milestones";
 import { MilestoneExporter, milestoneHash } from "./milestone-export";
+import { enrichOrgDataset } from "../domain/org-milestones";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const fs = await importOriginal<typeof import("node:fs/promises")>();
@@ -83,6 +84,31 @@ describe("local filtered milestone Excel export", () => {
     invalid.expectedHash = "0".repeat(64);
     await expect(exporter.export(invalid)).rejects.toThrow("Saved milestones changed");
     expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("exports the exact filtered org revision and refuses silently changed classifications", async () => {
+    const enriched = enrichOrgDataset(dataset(), { revision: "org-v1", people: [
+      { id: "local", name: "Creator", upn: "creator@example.invalid", alias: "creator", jobTitle: "Specialist",
+        org: "STU", source: "manual", msxUserIds: ["creator-0"], updatedAt: "2026-11-12T10:00:00.000Z" },
+    ] });
+    const view = initialMilestoneView();
+    view.filters.creatorOrg = ["STU"];
+    const ordered = orderedMilestones(enriched.milestones, view);
+    const input = { accountIds: ["portfolio"], view, orgRevision: "org-v1",
+      expectedIds: ordered.map(row => row.id), expectedHash: milestoneHash(ordered) };
+    const exporter = new MilestoneExporter(async () => enriched, () => directory, vi.fn());
+    const saved = await exporter.export(input);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(saved.path);
+    const sheet = workbook.getWorksheet("Milestones")!;
+    const headers = sheet.getRow(1).values;
+    expect(Array.isArray(headers)).toBe(true);
+    const orgColumn = Array.isArray(headers) ? headers.indexOf("Creator org (current cached)") : -1;
+    expect(sheet.rowCount).toBe(31);
+    expect(sheet.getCell(2, orgColumn).value).toBe("STU");
+    expect(JSON.stringify(workbook.getWorksheet("View")!.getSheetValues())).toContain("org-v1");
+    await expect(exporter.export({ ...input, orgRevision: "older" })).rejects.toThrow("Organization classifications changed");
+    expect(await readdir(directory)).toHaveLength(1);
   });
 
   it("preserves successful exports when Explorer fails and reports failed writes without claiming success", async () => {

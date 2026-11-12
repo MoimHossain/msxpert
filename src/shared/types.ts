@@ -150,6 +150,7 @@ export interface NormalizedMilestone {
   forecastCommentsModifiedOn: string | null;
   milestoneComments: string | null;
   ownerId: string | null;
+  ownerEntityType?: string | null;
   ownerName: string | null;
   accountId: string | null;
   accountName: string | null;
@@ -169,6 +170,12 @@ export interface MilestoneRow extends NormalizedMilestone {
   portfolioAccountId: string;
   portfolioAccountName: string;
   portfolioTpid: string;
+  creatorOrg?: import("./organization").OrgUnit;
+  ownerOrg?: import("./organization").OrgUnit;
+  creatorOrgBasis?: string;
+  ownerOrgBasis?: string;
+  creatorOrgCheckedAt?: string;
+  ownerOrgCheckedAt?: string;
 }
 
 export interface GoneReason {
@@ -376,6 +383,15 @@ export interface BootstrapState {
 }
 
 export interface DesktopApi {
+  getOrganization(): Promise<import("./organization").OrgState>;
+  importOrganizationCatalog(): Promise<import("./organization").OrgImportResult | null>;
+  refreshOrganizationLinks(): Promise<import("./organization").OrgState>;
+  discoverOrganization(mode?: import("./organization").OrgDiscoveryMode): Promise<import("./organization").OrgState>;
+  cancelOrganization(): Promise<import("./organization").OrgState>;
+  saveOrganizationPerson(input: import("./organization").OrgPersonInput): Promise<import("./organization").OrgState>;
+  removeOrganizationPerson(id: string): Promise<import("./organization").OrgState>;
+  onOrganizationProgress(listener: (progress: import("./organization").OrgProgress) => void): () => void;
+  onOrganizationChanged(listener: () => void): () => void;
   getAiConnections(): Promise<import("./ai").AiConnectionsState>;
   testAiAccess(config: import("./ai").AiConfiguration): Promise<import("./ai").AiConnectionsState>;
   testWorkiqAccess(config: import("./ai").WorkiqConfiguration): Promise<import("./ai").AiConnectionsState>;

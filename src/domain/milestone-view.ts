@@ -7,6 +7,7 @@ import {
 
 export const FACET_LABELS: Record<MilestoneFacet, string> = {
   status: "Status", owner: "Owner", creator: "Raised By", portfolio: "Portfolio account", account: "MSX account",
+  creatorOrg: "Creator org", ownerOrg: "Owner org",
   commitment: "Commitment", month: "Month", solutionArea: "Solution area", azureRegion: "Azure region", workload: "Workload",
 };
 const compareText = new Intl.Collator("en-US").compare;
@@ -18,7 +19,7 @@ export function enrichMilestones(rows: NormalizedMilestone[], account: Portfolio
 
 export function emptyFilters(): MilestoneFilters {
   return {
-    search: "", status: [], owner: [], creator: [], portfolio: [], account: [], commitment: [],
+    search: "", status: [], owner: [], creator: [], creatorOrg: [], ownerOrg: [], portfolio: [], account: [], commitment: [],
     month: [], solutionArea: [], azureRegion: [], workload: [],
     dateFrom: "", dateTo: "", minMonthlyUse: "", maxMonthlyUse: "",
   };
@@ -47,6 +48,8 @@ export function facetValue(row: MilestoneRow, key: MilestoneFacet): string {
   switch (key) {
     case "owner": return row.ownerName || NOT_SET;
     case "creator": return row.createdById || row.createdByName || NOT_SET;
+    case "creatorOrg": return row.creatorOrg ?? "Unknown";
+    case "ownerOrg": return row.ownerOrg ?? "Unknown";
     case "portfolio": return row.portfolioAccountId || NOT_SET;
     case "account": return row.accountName || NOT_SET;
     case "month": return monthKey(row.date) || NOT_SET;
@@ -87,6 +90,7 @@ export function applyFilters(rows: MilestoneRow[], filters: MilestoneFilters, ex
     if (search && ![
       row.name, row.number, row.ownerName, row.createdByName, row.portfolioAccountName, row.portfolioTpid, row.accountName,
       row.opportunityName, row.workload, row.azureRegion, row.forecastComments, row.milestoneComments,
+      row.creatorOrg, row.ownerOrg,
     ].filter(Boolean).join(" ").toLowerCase().includes(search)) return false;
     const date = row.date?.slice(0, 10);
     if (filters.dateFrom && (!date || date < filters.dateFrom)) return false;
@@ -104,7 +108,7 @@ export interface FacetOption { value: string; label: string; count: number }
 
 export function deriveFilterOptions(rows: MilestoneRow[], filters: MilestoneFilters): Record<MilestoneFacet, FacetOption[]> {
   const options: Record<MilestoneFacet, FacetOption[]> = {
-    status: [], owner: [], creator: [], portfolio: [], account: [], commitment: [], month: [], solutionArea: [], azureRegion: [], workload: [],
+    status: [], owner: [], creator: [], creatorOrg: [], ownerOrg: [], portfolio: [], account: [], commitment: [], month: [], solutionArea: [], azureRegion: [], workload: [],
   };
   for (const key of FACET_KEYS) {
     const counts = new Map<string, number>();

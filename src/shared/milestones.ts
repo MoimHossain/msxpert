@@ -1,8 +1,8 @@
 import type { MilestoneRow, ScopeSettings } from "./types";
 
-export const FACET_KEYS = ["status", "owner", "creator", "portfolio", "account", "commitment", "month", "solutionArea", "azureRegion", "workload"] as const;
+export const FACET_KEYS = ["status", "owner", "creator", "creatorOrg", "ownerOrg", "portfolio", "account", "commitment", "month", "solutionArea", "azureRegion", "workload"] as const;
 export type MilestoneFacet = typeof FACET_KEYS[number];
-export const SORT_KEYS = ["name", "number", "date", "status", "commitment", "monthlyUse", "ownerName", "createdByName", "portfolioAccountName", "accountName", "solutionArea", "azureRegion", "workload", "opportunityName"] as const;
+export const SORT_KEYS = ["name", "number", "date", "status", "commitment", "monthlyUse", "ownerName", "createdByName", "creatorOrg", "ownerOrg", "portfolioAccountName", "accountName", "solutionArea", "azureRegion", "workload", "opportunityName"] as const;
 export type MilestoneSortKey = typeof SORT_KEYS[number];
 export type SortDirection = "asc" | "desc";
 export const NOT_SET = "\u0000";
@@ -30,9 +30,11 @@ export interface MilestoneDataset {
   accountIds: string[];
   missingAccountIds: string[];
   scope: ScopeSettings;
+  orgRevision?: string;
 }
 
 export interface MilestoneExportRequest {
+  orgRevision?: string | undefined;
   history?: import("./history").HistorySelection | undefined;
   accountIds: string[];
   view: MilestoneViewState;

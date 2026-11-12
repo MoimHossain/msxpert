@@ -87,6 +87,22 @@ describe("MSX session lifecycle", () => {
     await expect(auth().getAccessToken()).rejects.toBeInstanceOf(AuthRequiredError);
   });
 
+  it("binds the org seed and scope to one MSAL account read, using username rather than a mail alias", async () => {
+    mocks.accounts.mockResolvedValue([{ homeAccountId: "current-account", username: "canonical@example.invalid",
+      name: "Synthetic User", idTokenClaims: { email: "mail-alias@example.invalid" } }]);
+    expect(await auth().getAccountIdentity()).toEqual({
+      key: "current-account", upn: "canonical@example.invalid", name: "Synthetic User",
+    });
+    expect(mocks.accounts).toHaveBeenCalledOnce();
+    expect(mocks.silent).not.toHaveBeenCalled();
+    expect(mocks.interactive).not.toHaveBeenCalled();
+  });
+
+  it("does not invent an organization seed when the cached account has no authenticated username", async () => {
+    mocks.accounts.mockResolvedValue([{ homeAccountId: "current-account", name: "Not an identity" }]);
+    expect(await auth().getAccountIdentity()).toBeNull();
+  });
+
   it("cancels the pending flow and permits retry", async () => {
     mocks.accounts.mockResolvedValue([]);
     mocks.interactive.mockImplementation(({ loopbackClient }) => loopbackClient.listenForAuthCode());

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { NormalizedMilestone } from "../../../shared/types";
+import type { NormalizedMilestone, MilestoneRow } from "../../../shared/types";
 import { Modal } from "../ui/Modal";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -8,7 +8,7 @@ import { statusTone, commitmentTone } from "../../lib/status";
 import { isSafeExternalUrl } from "../../lib/url";
 
 interface MilestoneDetailDrawerProps {
-  milestone: NormalizedMilestone;
+  milestone: NormalizedMilestone & Partial<Pick<MilestoneRow, "creatorOrg" | "ownerOrg" | "creatorOrgBasis" | "ownerOrgBasis">>;
   onClose: () => void;
 }
 
@@ -57,6 +57,10 @@ export function MilestoneDetailDrawer({ milestone, onClose }: MilestoneDetailDra
         <Fact label="Non-recurring months" value={milestone.nonRecurringMonths} />
         <Fact label="Owner" value={milestone.ownerName} />
         <Fact label="Raised By" value={milestone.createdByName} />
+        <Fact label="Creator org (current cached)" value={milestone.creatorOrg ?? "Unknown"} />
+        <Fact label="Owner org (current cached)" value={milestone.ownerOrg ?? "Unknown"} />
+        <Fact label="Creator org evidence" value={milestone.creatorOrgBasis ?? "No exact identity link"} />
+        <Fact label="Owner org evidence" value={milestone.ownerOrgBasis ?? "No exact identity link"} />
         <Fact label="Account" value={milestone.accountName} />
         <Fact
           label="Opportunity"
