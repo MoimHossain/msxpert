@@ -137,6 +137,38 @@ describe("data-preserving setup reset", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("builds a cache-only hygiene view from watched and retained captures with newest overlap and actual windows", async () => {
+    const mine = "00000000-0000-4000-8000-000000000099";
+    vi.mocked(auth.getAccountKey).mockResolvedValue("demo");
+    store.put("user-profile", "current", { accountKey: "demo", id: mine });
+    store.put("current:local-customer", "milestones", [milestone({ id: "shared", ownerId: "old", accountName: "Actual child" })]);
+    store.put("current:local-customer", "manifest", { generatedAt: "2026-11-01T00:00:00Z",
+      filter: { dateFrom: "2026-07-01", dateTo: "2027-06-30", excludedStatuses: ["Completed"] } });
+    store.put("archived-portfolio-account", "outside", { ...account, id: "outside" });
+    store.put("current:outside", "milestones", [milestone({ id: "shared", ownerId: mine }), milestone({ id: "outside-only", ownerId: mine })]);
+    store.put("current:outside", "manifest", { generatedAt: "2026-11-12T00:00:00Z",
+      filter: { dateFrom: "2026-10-01", dateTo: "2026-12-31", excludedStatuses: [] } });
+    const fetch = vi.spyOn(msx, "fetchMilestones");
+    const snapshot = await service.getHygieneSnapshot();
+    expect(snapshot.currentUserId).toBe(mine);
+    expect(snapshot.milestones.map(row => row.id)).toEqual(["shared", "outside-only"]);
+    expect(snapshot.milestones[0]?.ownerId).toBe(mine);
+    expect(snapshot.watchedMilestoneIds).toEqual(["shared"]);
+    expect(snapshot.captures[0]).toMatchObject({ watched: false, dateTo: "2026-12-31" });
+    expect(snapshot.captures[1]).toMatchObject({ watched: true, dateFrom: "2026-07-01" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("never invents a current MSX owner identity or capture window from settings", async () => {
+    store.put("current:local-customer", "manifest", { runId: "legacy" });
+    const snapshot = await service.getHygieneSnapshot();
+    expect(snapshot.currentUserId).toBeNull();
+    expect(snapshot.captures[0]).toMatchObject({ hasData: true, refreshedAt: null, dateFrom: null, dateTo: null });
+    vi.mocked(auth.getAccountKey).mockResolvedValue("different-account");
+    store.put("user-profile", "current", { accountKey: "demo", id: "00000000-0000-4000-8000-000000000099" });
+    expect((await service.getHygieneSnapshot()).currentUserId).toBeNull();
+  });
+
   it("archives active customers, resets first-run preferences, and keeps history, team, and POD records", async () => {
     const state = await service.resetSetup(directory);
     expect(auth.signOut).toHaveBeenCalledOnce();

@@ -120,6 +120,10 @@ export function accountUrl(id: string): string {
   return recordUrl("account", id);
 }
 
+export function ownerUrl(id: string, entity: "systemuser" | "team"): string {
+  return recordUrl(entity, id);
+}
+
 export function normalizeMilestone(record: RawRecord): NormalizedMilestone {
   const id = String(record.msp_engagementmilestoneid);
   const opportunityId = stringOrNull(record._msp_opportunityid_value);

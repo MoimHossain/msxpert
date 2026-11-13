@@ -41,6 +41,7 @@ export const IPC = {
   removeAccount: "accounts:remove",
   getOverview: "portfolio:overview",
   getMilestones: "milestones:list",
+  getHygieneSnapshot: "hygiene:snapshot",
   exportMilestones: "milestones:export",
   refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",

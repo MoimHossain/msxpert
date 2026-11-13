@@ -22,6 +22,7 @@ export function AppShell({ identityName, identityUsername, profile, changesBadge
   const { notify } = useToast();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("csu-console-sidebar-collapsed") === "true");
   const entries: NavEntry[] = [
+    { id: "overview", label: "Overview" },
     { id: "portfolio", label: "Portfolio" },
     { id: "milestones", label: "Milestones" },
     { id: "changes", label: "All Changes", badge: changesBadge },

@@ -14,7 +14,7 @@ import { filterIssue } from "../domain/milestone-view";
 import type { OrgService } from "./org-service";
 import { ORG_UNITS, orgDiscoveryModeSchema, orgPersonInputSchema, type OrgProgress } from "../shared/organization";
 import { readOrgCatalog } from "./org-catalog";
-import { enrichOrgDataset } from "../domain/org-milestones";
+import { enrichOrgDataset, enrichOrgMilestones } from "../domain/org-milestones";
 
 const idSchema = z.string().min(1).max(200);
 const nullableText = z.string().max(4000).nullable();
@@ -243,6 +243,12 @@ export function registerIpc(
   handle(IPC.getOverview, () => service.getOverview());
   handle(IPC.getMilestones, async () => organization ?
     enrichOrgDataset(service.getMilestones(), await organization.getState()) : service.getMilestones());
+  handle(IPC.getHygieneSnapshot, async () => {
+    const snapshot = await service.getHygieneSnapshot();
+    if (!organization) return snapshot;
+    const state = await organization.getState();
+    return { ...snapshot, milestones: enrichOrgMilestones(snapshot.milestones, state.people) };
+  });
   register(IPC.exportMilestones, milestoneExportSchema, request => milestoneExporter.export(request));
   handle(IPC.refreshAccountTerritories, () => service.refreshAccountTerritories());
   register(IPC.getAccountState, idSchema, (accountId) =>

@@ -10,6 +10,7 @@ import {
 export type AccountTab = "dashboard" | "milestones" | "changes" | "history";
 
 export type Route =
+  | { name: "overview" }
   | { name: "portfolio" }
   | { name: "milestones" }
   | { name: "changes" }
@@ -29,7 +30,7 @@ interface NavigationContextValue {
 const NavigationContext = createContext<NavigationContextValue | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [route, setRoute] = useState<Route>({ name: "portfolio" });
+  const [route, setRoute] = useState<Route>({ name: "overview" });
 
   const navigate = useCallback((next: Route) => setRoute(next), []);
   const goToAccount = useCallback(

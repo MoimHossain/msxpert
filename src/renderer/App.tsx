@@ -22,6 +22,7 @@ import { ToastViewport } from "./components/ui/ToastViewport";
 import { Avatar } from "@fluentui/react-components";
 import { FetchProvider } from "./state/FetchProvider";
 import { OrganizationProvider } from "./state/OrganizationProvider";
+import { OverviewView } from "./components/overview/OverviewView";
 
 function StartupUpdates() {
   const { state } = useAppData();
@@ -40,6 +41,9 @@ function StartupUpdates() {
 function RouteOutlet() {
   const { route, navigate } = useNavigation();
   const { settings } = useLoadedAppData();
+  useEffect(() => {
+    navigate({ name: "overview" });
+  }, [navigate]);
   const disabled = (route.name === "team" && !settings.teamEnabled) ||
     (route.name === "pods" && !settings.podsEnabled);
   useEffect(() => {
@@ -47,6 +51,8 @@ function RouteOutlet() {
   }, [disabled, navigate]);
   if (disabled) return null;
   switch (route.name) {
+    case "overview":
+      return <OverviewView />;
     case "portfolio":
       return <PortfolioView />;
     case "milestones":

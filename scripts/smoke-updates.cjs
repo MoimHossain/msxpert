@@ -43,6 +43,8 @@ if (!process.versions.electron) {
   let exportedMilestones = [];
   let revealedMilestones = [];
   let milestoneReadFailure = false;
+  let hygieneReadFailure = false;
+  let hygieneDemoEnabled = false;
   const openedMilestoneLinks = [];
   const copiedMilestoneLinks = [];
   let failMilestoneCopy = false;
@@ -367,8 +369,8 @@ if (!process.versions.electron) {
       const select = controls.querySelector('select').getBoundingClientRect();
       return [...controls.querySelectorAll('button')].every(button => Math.abs(button.getBoundingClientRect().bottom - select.bottom) <= 1);
     })()`), true, "Toolbar buttons align with the Freeze column dropdown rather than its label");
-    assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar-list button')].slice(0,3).map(button => button.getAttribute('aria-label').split(',')[0])`),
-      ["Portfolio", "Milestones", "All Changes"]);
+    assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar-list button')].slice(0,4).map(button => button.getAttribute('aria-label').split(',')[0])`),
+      ["Overview", "Portfolio", "Milestones", "All Changes"]);
     assert.equal(await js(`(() => {
       const columns = [...document.querySelectorAll('.milestone-grid th')].map(header => header.dataset.column);
       return columns.indexOf('createdByName') === columns.indexOf('ownerName') + 1 &&
@@ -845,6 +847,7 @@ if (!process.versions.electron) {
     await wait(() => js("Boolean(document.querySelector('.organization-section'))"));
   };
   const checkPortfolioCards = async () => {
+    await clickAria("Portfolio");
     await wait(() => js("document.querySelectorAll('.territory-account-group').length === 2"));
     assert.deepEqual(await js(`[...document.querySelectorAll('.territory-account-group')].map(group => ({
       name: group.querySelector('.territory-name').textContent,
@@ -960,6 +963,66 @@ if (!process.versions.electron) {
         .find(tab => tab.textContent.trim().startsWith(${JSON.stringify(label)}));
       if (!tab) return false; tab.click(); return true;
     })()`), `Tab ${label}`);
+  };
+  const checkOverview = async () => {
+    hygieneDemoEnabled = true;
+    try {
+      await clickAria("Overview");
+      await wait(() => js("Boolean(document.querySelector('.overview-hero'))"));
+      await wait(() => js(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Reload local cache')?.disabled === false`));
+      await click("Reload local cache");
+      await wait(() => js("document.querySelector('[data-hygiene-rule=committed-non-csu] .hygiene-tile-count strong')?.textContent === '1'"));
+      assert.equal(await js("document.querySelectorAll('[data-hygiene-rule]').length"), 6);
+      assert.equal(await js("document.querySelector('.overview-coverage').textContent.includes('Retained sample')"), true,
+        "Freshness includes retained captures supplying newer overlapping watched milestones");
+      assert.equal(await js("document.querySelector('.overview-priority-total > strong').textContent"), "2", "Priority is distinct across four exceptions on one milestone");
+      assert.equal(await js("document.querySelector('.overview-priority-total').textContent.includes('EUR 100') && document.querySelector('.overview-priority-total').textContent.includes('USD 200')"), true,
+        "Mixed denominations remain separate and coaching values are excluded");
+      assert.equal(await js("document.querySelector('[data-hygiene-rule=coaching] .hygiene-tile-count strong').textContent"), "1");
+      await js("document.querySelector('[data-hygiene-rule=low-stage]').click()");
+      await wait(() => js("document.querySelectorAll('[data-hygiene-milestone]').length === 1"));
+      assert.equal(await js("document.querySelector('[data-hygiene-milestone]').textContent.includes('2 - Inspire & Design')"), true);
+      assert.equal(await js("document.querySelectorAll('[data-hygiene-milestone] a').length"), 2);
+      await setField("Result", "unknown", ".hygiene-filters");
+      await wait(() => js("document.querySelector('[data-hygiene-milestone]')?.textContent.includes('Cannot evaluate')"));
+      assert.equal(await js("document.querySelector('.hygiene-drilldown').textContent.includes('not cached')"), true);
+      await setField("Exception", "priority", ".hygiene-filters");
+      await setField("Result", "flagged", ".hygiene-filters");
+      await setField("Owner", "hygiene-other", ".hygiene-filters");
+      await wait(() => js("document.querySelectorAll('[data-hygiene-milestone]').length === 1"));
+      assert.equal(await js("document.querySelector('[data-hygiene-milestone]').dataset.hygieneMilestone"), "hygiene-due");
+      await setField("Owner", "", ".hygiene-filters");
+      await setField("Account", "hygiene-child", ".hygiene-filters");
+      await wait(() => js("document.querySelectorAll('[data-hygiene-milestone]').length === 2"));
+      await click("My milestones");
+      await wait(() => js("document.querySelector('.overview-coverage').textContent.includes('My milestones')"));
+      assert.equal(await js("document.querySelector('.overview-priority-total').textContent.includes('USD 400')"), true, "My scope includes cached ownership outside watched accounts");
+      assert.equal(await js("document.querySelector('.hygiene-drilldown').textContent.includes('Outside watched accounts')"), true);
+      await click("Watched accounts");
+      hygieneReadFailure = true;
+      await click("Reload local cache");
+      await wait(() => js("document.body.innerText.includes('Synthetic hygiene cache read failed.')"));
+      assert.equal(await js("document.querySelector('.overview-priority-total > strong').textContent"), "—", "Failed reads do not become clean zero counts");
+      hygieneReadFailure = false;
+      await click("Reload local cache");
+      await wait(() => js("document.querySelectorAll('[data-hygiene-rule]').length === 6"));
+      await js("document.querySelector('.app-content').scrollTop = 0");
+      const original = window.getContentSize();
+      try {
+        for (const width of [original[0], 900, 640]) {
+          window.setContentSize(width, original[1]);
+          await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+          await wait(() => js("document.scrollingElement.scrollWidth <= innerWidth && document.querySelector('.overview-hero').getBoundingClientRect().right <= innerWidth + 1"));
+        }
+      } finally { window.setContentSize(...original); await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`)); }
+      if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+        const theme = await js("document.documentElement.dataset.theme");
+        await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-overview.png`));
+      }
+      console.log("Overview passed: landing, six rules, exact scopes, distinct currency totals, coaching separation, missing evidence, row filters, error feedback and responsive layout.");
+    } finally { hygieneDemoEnabled = false; hygieneReadFailure = false; }
+    await clickAria("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
   };
   const clickAccessible = async label => {
     assert.ok(await js(`(() => {
@@ -1131,6 +1194,8 @@ if (!process.versions.electron) {
     if (process.env.MCAPS_SMOKE_SCREENSHOT) await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-active-fetch.png`));
     assert.equal((await js("window.desktop.getFetchProgress()")).accounts.find(row => row.stage === "milestones").milestones, 20);
     await window.loadFile(join(root, "dist-renderer", "index.html"));
+    await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    await clickAria("Portfolio");
     await wait(() => js("Boolean(document.querySelector('.fetch-progress-panel')) && document.querySelectorAll('.account-card [role=progressbar]').length === 1"));
     assert.equal((await js("window.desktop.getFetchProgress()")).accounts.find(row => row.stage === "milestones").milestones, 20,
       "A renderer reload restores the real in-flight account and progress");
@@ -1226,7 +1291,7 @@ if (!process.versions.electron) {
       copiedMilestoneLinks.push(parsed);
     });
     milestoneStore = new VaultStore(join(process.env.CSU_SMOKE_DATA, "milestone-vault"));
-    const milestoneService = new PortfolioService(milestoneStore, {}, {
+    const milestoneService = new PortfolioService(milestoneStore, { getAccountKey: async () => "smoke-profile-scope" }, {
       resolveAccountTree: async tpid => {
         const account = demoAccounts.find(row => row.tpid === tpid);
         if (failNextAccount && account.id === "smoke-account") { failNextAccount = false; throw new Error("Synthetic account fetch failed."); }
@@ -1293,6 +1358,41 @@ if (!process.versions.electron) {
     ipcMain.handle(IPC.getMilestones, () => {
       if (milestoneReadFailure) throw new Error("Synthetic saved-data read failed.");
       return milestoneService.getMilestones();
+    });
+    ipcMain.handle(IPC.getHygieneSnapshot, async () => {
+      if (hygieneReadFailure) throw new Error("Synthetic hygiene cache read failed.");
+      if (!hygieneDemoEnabled) return milestoneService.getHygieneSnapshot();
+      const { localBusinessDate, businessDateAfter } = require(join(root, "dist-main", "domain", "hygiene.js"));
+      const now = new Date(), today = localBusinessDate(now);
+      const base = demoMilestones(demoAccounts[0])[0];
+      const row = (id, overrides) => ({ ...base, id, name: id, date: today, category: "Production",
+        portfolioAccountId: demoAccounts[0].id, portfolioAccountName: demoAccounts[0].name, portfolioTpid: demoAccounts[0].tpid,
+        accountId: "hygiene-child", accountName: "Hygiene child account", ownerId: syntheticOrgOwnerId,
+        ownerEntityType: "systemuser", monthlyUse: 100, ownerOrg: "CSU",
+        url: `${MSX_ORIGIN}/main.aspx?etn=msp_engagementmilestone&id=${id}`, ...overrides });
+      const valid = id => ({ ownerId: id, status: "valid", source: "msx", checkedAt: now.toISOString() });
+      const multi = row("hygiene-multi", { portfolioAccountId: "hygiene-retained", date: businessDateAfter(today, -1), ownerOrg: "STU", opportunityId: "hygiene-opp",
+        opportunityName: "Hygiene opportunity", opportunityUrl: `${MSX_ORIGIN}/main.aspx?etn=opportunity&id=hygiene-opp`, hygiene: {
+          commitmentTransitionAt: new Date(now.getTime() - 14 * 86400000).toISOString(), segment: "Enterprise", currency: "EUR",
+          opportunity: { id: "hygiene-opp", stageName: "4-4-Inspire & Design", checkedAt: now.toISOString() },
+          ownerValidity: { ...valid(syntheticOrgOwnerId), status: "inactive" },
+        } });
+      const due = row("hygiene-due", { ownerId: "hygiene-other", ownerName: "Other owner", commitment: "Uncommitted", monthlyUse: 200,
+        hygiene: { currency: "USD", ownerValidity: valid("hygiene-other") } });
+      const coach = row("hygiene-coach", { status: "Blocked", date: businessDateAfter(today, 40), category: "Intent", monthlyUse: 300,
+        hygiene: { currency: "USD", intentEligible: false, ownerValidity: valid(syntheticOrgOwnerId) } });
+      const outside = row("hygiene-outside", { portfolioAccountId: "hygiene-retained", accountId: "hygiene-outside-account",
+        accountName: "Outside watched accounts", date: businessDateAfter(today, -1), category: "Intent", monthlyUse: 400,
+        hygiene: { currency: "USD", ownerValidity: valid(syntheticOrgOwnerId) } });
+      const unknown = row("hygiene-unknown", { ownerId: "unknown-owner", ownerOrg: "Unknown" });
+      return { currentUserId: syntheticOrgOwnerId, milestones: [multi, due, coach, outside, unknown],
+        watchedMilestoneIds: [multi.id, due.id, coach.id, unknown.id],
+        captures: [
+          { accountId: demoAccounts[0].id, name: "Watched sample", watched: true, hasData: true, refreshedAt: now.toISOString(),
+            dateFrom: businessDateAfter(today, -100), dateTo: businessDateAfter(today, 100), excludedStatuses: ["Completed"] },
+          { accountId: "hygiene-retained", name: "Retained sample", watched: false, hasData: true, refreshedAt: now.toISOString(),
+            dateFrom: businessDateAfter(today, -100), dateTo: businessDateAfter(today, 100), excludedStatuses: ["Completed"] },
+        ] };
     });
     ipcMain.handle(IPC.exportMilestones, async (event, request) => {
       assert.equal(event.sender, window.webContents);
@@ -1570,6 +1670,9 @@ if (!process.versions.electron) {
       const profile = document.querySelector('.sidebar-profile').getBoundingClientRect();
       return settings.top > innerHeight - 190 && profile.bottom <= innerHeight && profile.top > settings.top;
     })()`), true, "Settings and profile stay anchored at the bottom of the rail");
+    assert.equal(await js("document.querySelector('.sidebar-link-active').getAttribute('aria-label')"), "Overview", "Overview is the default signed-in landing page");
+    assert.equal(await js("document.querySelector('.sidebar-list button').getAttribute('aria-label')"), "Overview", "Overview comes before Portfolio");
+    await checkOverview();
     await checkPortfolioCards();
     await checkAllChangesSpacing();
     window.webContents.debugger.attach("1.3");
@@ -1602,6 +1705,7 @@ if (!process.versions.electron) {
     await wait(() => js("Boolean(document.querySelector('.appearance-settings input'))"));
     await js(`document.querySelector('.appearance-settings input[value="${theme === "light" ? "dark" : "light"}"]').click()`);
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
+    await checkOverview();
     await click("Portfolio");
     await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
     await checkPortfolioCards();

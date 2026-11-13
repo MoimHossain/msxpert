@@ -22,10 +22,12 @@ import { defaultSettings, WATCHED_FIELDS } from "../domain/defaults";
 import { diffSnapshots, foldChanges } from "../domain/diff";
 import type { AuthService } from "./auth";
 import type { MsxClient } from "./msx-client";
+import { accountUrl, ownerUrl } from "./msx-client";
 import type { VaultStore } from "./storage/vault";
 import { ProfileService } from "./profile-service";
 import { TerritoryImportService } from "./territory-import-service";
 import type { MilestoneDataset } from "../shared/milestones";
+import type { HygieneSnapshot } from "../shared/hygiene";
 import type { AccountFetchProgress, FetchProgress } from "../shared/fetch";
 import { enrichMilestones } from "../domain/milestone-view";
 import { HistoryService } from "./history-service";
@@ -163,6 +165,37 @@ export class PortfolioService {
     }
     return { milestones: [...milestones.values()], accountIds: accounts.map(account => account.id),
       missingAccountIds, scope: this.getSettings().scope };
+  }
+
+  async getHygieneSnapshot(): Promise<HygieneSnapshot> {
+    const accountKey = await this.auth.getAccountKey();
+    const profile = this.profiles.getCached(accountKey);
+    const watched = new Set(this.listAccounts().map(account => account.id));
+    const accounts = new Map(this.store.list<PortfolioAccount>(ARCHIVED_ACCOUNT_KIND).map(account => [account.id, account]));
+    for (const account of this.listAccounts()) accounts.set(account.id, account);
+    const rows = new Map<string, { row: MilestoneRow; time: number }>();
+    const watchedIds = new Set<string>();
+    const captures: HygieneSnapshot["captures"] = [];
+    for (const account of accounts.values()) {
+      const current = this.store.get<NormalizedMilestone[]>(currentKind(account.id), "milestones");
+      const manifest = this.store.get<CurrentManifest>(currentKind(account.id), "manifest");
+      const refreshedAt = manifest?.generatedAt ?? null;
+      const time = refreshedAt && Number.isFinite(Date.parse(refreshedAt)) ? Date.parse(refreshedAt) : -1;
+      captures.push({ accountId: account.id, name: account.name, watched: watched.has(account.id), hasData: current !== null,
+        refreshedAt, dateFrom: manifest?.filter?.dateFrom ?? null, dateTo: manifest?.filter?.dateTo ?? null,
+        excludedStatuses: manifest?.filter?.excludedStatuses ?? [] });
+      for (const row of enrichMilestones(current ?? [], account)) {
+        const id = row.id.toLowerCase();
+        if (watched.has(account.id)) watchedIds.add(id);
+        if (!rows.has(id) || time > rows.get(id)!.time) rows.set(id, { row: { ...row,
+          ...(row.accountId ? { accountUrl: accountUrl(row.accountId) } : {}),
+          ...(row.ownerId && (row.ownerEntityType === "systemuser" || row.ownerEntityType === "team") ?
+            { ownerUrl: ownerUrl(row.ownerId, row.ownerEntityType) } : {}),
+        }, time });
+      }
+    }
+    return { milestones: [...rows.values()].map(item => item.row), captures, watchedMilestoneIds: [...watchedIds],
+      currentUserId: profile?.id && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(profile.id) ? profile.id : null };
   }
 
   async searchAccounts(term: string) {

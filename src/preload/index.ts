@@ -56,6 +56,7 @@ const IPC = {
   removeAccount: "accounts:remove",
   getOverview: "portfolio:overview",
   getMilestones: "milestones:list",
+  getHygieneSnapshot: "hygiene:snapshot",
   exportMilestones: "milestones:export",
   refreshAccountTerritories: "portfolio:refresh-territories",
   getAccountState: "portfolio:account-state",
@@ -79,6 +80,7 @@ const IPC = {
 } as const;
 
 const api: DesktopApi = {
+  getHygieneSnapshot: () => ipcRenderer.invoke(IPC.getHygieneSnapshot),
   getOrganization: () => ipcRenderer.invoke(IPC.organizationState),
   importOrganizationCatalog: () => ipcRenderer.invoke(IPC.organizationImport),
   refreshOrganizationLinks: () => ipcRenderer.invoke(IPC.organizationRefreshLinks),

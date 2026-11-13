@@ -128,6 +128,7 @@ export interface PortfolioAccount {
 }
 
 export interface NormalizedMilestone {
+  hygiene?: import("./hygiene").HygieneEnrichment;
   id: string;
   number: string | null;
   name: string | null;
@@ -167,6 +168,8 @@ export interface NormalizedMilestone {
 }
 
 export interface MilestoneRow extends NormalizedMilestone {
+  accountUrl?: string;
+  ownerUrl?: string;
   portfolioAccountId: string;
   portfolioAccountName: string;
   portfolioTpid: string;
@@ -425,6 +428,7 @@ export interface DesktopApi {
   removeAccount(accountId: string, deleteHistory: boolean): Promise<void>;
   getOverview(): Promise<PortfolioOverview>;
   getMilestones(): Promise<MilestoneDataset>;
+  getHygieneSnapshot(): Promise<import("./hygiene").HygieneSnapshot>;
   exportMilestones(request: MilestoneExportRequest): Promise<MilestoneExportResult>;
   refreshAccountTerritories(): Promise<void>;
   getAccountState(accountId: string): Promise<AccountState>;
