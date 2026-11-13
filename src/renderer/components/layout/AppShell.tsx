@@ -24,6 +24,7 @@ export function AppShell({ identityName, identityUsername, profile, changesBadge
   const entries: NavEntry[] = [
     { id: "overview", label: "Overview" },
     { id: "portfolio", label: "Portfolio" },
+    { id: "acr", label: "ACR" },
     { id: "milestones", label: "Milestones" },
     { id: "changes", label: "All Changes", badge: changesBadge },
     { id: "team", label: "Team" },

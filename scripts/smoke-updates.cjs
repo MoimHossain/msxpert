@@ -45,6 +45,11 @@ if (!process.versions.electron) {
   let milestoneReadFailure = false;
   let hygieneReadFailure = false;
   let hygieneDemoEnabled = false;
+  let acrService;
+  let acrConnected = false;
+  let pauseNextAcr = false;
+  let resumeAcr = null;
+  let failAcr = false;
   const openedMilestoneLinks = [];
   const copiedMilestoneLinks = [];
   let failMilestoneCopy = false;
@@ -369,8 +374,8 @@ if (!process.versions.electron) {
       const select = controls.querySelector('select').getBoundingClientRect();
       return [...controls.querySelectorAll('button')].every(button => Math.abs(button.getBoundingClientRect().bottom - select.bottom) <= 1);
     })()`), true, "Toolbar buttons align with the Freeze column dropdown rather than its label");
-    assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar-list button')].slice(0,4).map(button => button.getAttribute('aria-label').split(',')[0])`),
-      ["Overview", "Portfolio", "Milestones", "All Changes"]);
+    assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar-list button')].slice(0,5).map(button => button.getAttribute('aria-label').split(',')[0])`),
+      ["Overview", "Portfolio", "ACR", "Milestones", "All Changes"]);
     assert.equal(await js(`(() => {
       const columns = [...document.querySelectorAll('.milestone-grid th')].map(header => header.dataset.column);
       return columns.indexOf('createdByName') === columns.indexOf('ownerName') + 1 &&
@@ -964,6 +969,137 @@ if (!process.versions.electron) {
       if (!tab) return false; tab.click(); return true;
     })()`), `Tab ${label}`);
   };
+  const checkAcr = async () => {
+    await clickAria("ACR");
+    await wait(() => js("Boolean(document.querySelector('.acr-page'))"));
+    await wait(() => js(`[...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Connect Power BI' && !button.disabled)`));
+    assert.equal(await js(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Fetch ACR').disabled`), true);
+    await click("Connect Power BI");
+    await wait(() => js("document.querySelector('.acr-connection').textContent.includes('Power BI connected as')"));
+    pauseNextAcr = true;
+    await click("Fetch ACR");
+    await wait(() => js("Boolean(document.querySelector('[data-acr-fetch-account]'))"));
+    await wait(() => resumeAcr !== null);
+    assert.equal(await js("Boolean(document.querySelector('[aria-label=\"ACR accounts processed\"]'))"), true);
+    const confirmationsBefore = confirmations.length;
+    window.webContents.send(IPC.updatePrepareRestart, { id: "00000000-0000-4000-8000-000000000075" });
+    await wait(() => confirmations.length === confirmationsBefore + 1);
+    assert.equal(confirmations.at(-1).safe, false, "ACR fetch blocks an update restart");
+    await clickAccessible("Close ACR fetch progress");
+    await wait(() => js("document.querySelector('[data-acr-fetch-account]') === null"));
+    await click("ACR progress");
+    await wait(() => js("Boolean(document.querySelector('[data-acr-fetch-account]'))"));
+    resumeAcr(); resumeAcr = null;
+    await wait(() => js("Boolean(document.querySelector('[data-acr-phase=\"complete\"]'))"));
+    await clickAccessible("Close ACR fetch progress");
+    await wait(() => js("document.querySelectorAll('.acr-kpis .stat-card').length === 5"));
+    assert.equal(await js("document.querySelector('p.acr-meta').textContent.includes('FY26-Dec to FY27-Nov')"), true);
+    assert.equal(await js("document.querySelectorAll('.acr-table thead th.acr-open').length"), 1);
+    assert.equal(await js("document.querySelectorAll('[data-acr-level=\"0\"]').length"), 2, "Only permitted configured top parents appear");
+    await click("Expand all");
+    await wait(() => js("document.querySelectorAll('[data-acr-level=\"5\"]').length === 2"));
+    await setField("Search ACR services", "SQL", ".acr-filters");
+    await wait(() => js("document.querySelector('.acr-table').textContent.includes('SQL') && !document.querySelector('.acr-table').textContent.includes('Compute')"));
+    await click("Clear ACR filters");
+    await setField("ACR movement", "up", ".acr-filters");
+    await wait(() => js("document.querySelector('.acr-table').textContent.includes('Compute') && !document.querySelector('.acr-table').textContent.includes('SQL')"));
+    await click("Clear ACR filters");
+    await wait(() => js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR accounts');
+      return field.querySelector('input').value === 'All' && document.querySelectorAll('[data-acr-level="0"]').length === 2;
+    })()`));
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR accounts');
+      field.querySelector('input').focus(); field.querySelector('input').click();
+    })()`);
+    await wait(() => js("Boolean(document.querySelector('[role=menuitemcheckbox]'))"));
+    await js(`[...document.querySelectorAll('[role=menuitemcheckbox]')].find(option => option.textContent === ${JSON.stringify(demoAccounts[0].name)}).click()`);
+    await wait(() => js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR accounts');
+      return field.querySelector('input').getAttribute('aria-expanded') === 'true' &&
+        [...document.querySelectorAll('[role=menuitemcheckbox]')].some(option =>
+          option.textContent === ${JSON.stringify(demoAccounts[0].name)} && option.getAttribute('aria-checked') === 'true');
+    })()`));
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR accounts');
+      field.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    })()`);
+    await wait(() => js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR accounts');
+      return field.querySelector('input').getAttribute('aria-expanded') === 'false';
+    })()`));
+    await click("Collapse");
+    await wait(() => js("document.querySelectorAll('[data-acr-level=\"0\"]').length === 1"));
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR months');
+      field.querySelector('input').focus(); field.querySelector('input').click();
+    })()`);
+    await wait(() => js("Boolean(document.querySelector('[role=menuitemcheckbox]'))"));
+    await js(`[...document.querySelectorAll('[role=menuitemcheckbox]')].find(option => option.textContent === 'Oct 2026').click()`);
+    await js(`(() => {
+      const field = [...document.querySelectorAll('.acr-filters .field')].find(field => field.querySelector('label')?.textContent === 'ACR months');
+      field.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    })()`);
+    await wait(() => js("document.querySelectorAll('.acr-table thead th').length === 4"));
+    await click("Clear ACR filters");
+    const previous = JSON.stringify((await acrService.getState()).snapshot);
+    failAcr = true;
+    await click("Fetch ACR");
+    await wait(() => js("Boolean(document.querySelector('[data-acr-phase=\"failed\"]'))"));
+    await wait(() => !acrService.busy);
+    assert.equal(JSON.stringify((await acrService.getState()).snapshot), previous, "Partial failure preserves the last good snapshot");
+    failAcr = false;
+    await clickAccessible("Close ACR fetch progress");
+    await wait(() => js(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Fetch ACR')?.disabled === false`));
+    pauseNextAcr = true;
+    await click("Fetch ACR");
+    await wait(() => resumeAcr !== null);
+    await wait(() => js(`Boolean(document.querySelector('[data-acr-phase="fetching"]')) &&
+      [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Cancel ACR fetch' && !button.disabled)`));
+    await click("Cancel ACR fetch");
+    await wait(() => js("Boolean(document.querySelector('[data-acr-phase=\"cancelled\"]'))"));
+    await wait(() => !acrService.busy);
+    resumeAcr = null;
+    assert.equal(JSON.stringify((await acrService.getState()).snapshot), previous, "Cancellation preserves the last good snapshot");
+    await clickAccessible("Close ACR fetch progress");
+    await new Promise(resolve => {
+      window.webContents.once("did-finish-load", resolve);
+      window.reload();
+    });
+    await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+    await clickAria("ACR");
+    await wait(() => js("document.querySelectorAll('.acr-kpis .stat-card').length === 5"));
+    await click("Expand all");
+    const original = window.getContentSize();
+    try {
+      for (const width of [original[0], 900, 640]) {
+        window.setContentSize(width, original[1]);
+        await wait(() => js(`Math.abs(innerWidth - ${width}) < 2`));
+        await wait(() => js(`(() => {
+          const wrap = document.querySelector('.acr-table-wrap');
+          const root = document.scrollingElement;
+          wrap.scrollLeft = 180;
+          const left = wrap.querySelector('.acr-service').getBoundingClientRect().left;
+          return root.scrollWidth <= innerWidth && wrap.scrollLeft > 0 &&
+            Math.abs(left - wrap.getBoundingClientRect().left) < 3 &&
+            [...document.querySelectorAll('.acr-filters .field')].every(field => {
+              const control = field.querySelector('.fui-Combobox, .fui-Input, .fui-Select');
+              return !control || control.getBoundingClientRect().right <= field.getBoundingClientRect().right + 1;
+            });
+        })()`));
+      }
+    } finally { window.setContentSize(...original); await wait(() => js(`Math.abs(innerWidth - ${original[0]}) < 2`)); }
+    if (process.env.MCAPS_SMOKE_SCREENSHOT) {
+      const theme = await js("document.documentElement.dataset.theme");
+      await screenshot(process.env.MCAPS_SMOKE_SCREENSHOT.replace(/\.png$/i, `-${theme}-acr.png`));
+    }
+    await click("Disconnect Power BI");
+    await wait(() => js("document.querySelector('.acr-connection').textContent.includes('Connect your own Power BI access')"));
+    assert.equal(await js("document.querySelectorAll('.acr-kpis .stat-card').length"), 5, "Disconnect does not delete the employee's last-good local snapshot");
+    await clickAria("Portfolio");
+    await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
+    console.log("ACR passed: explicit connection, hierarchy L1-L5, closed trend, scope/search/movement filters, real-time drawer, update blocker, atomic failure/cancellation, reload, disconnect and responsive layout.");
+  };
   const checkOverview = async () => {
     hygieneDemoEnabled = true;
     try {
@@ -1310,6 +1446,54 @@ if (!process.versions.electron) {
       },
       explainDisappearances: async () => new Map(),
     }, "smoke-test");
+    const { AcrService } = require(join(root, "dist-main", "main", "acr-service.js"));
+    const { PowerBiQueryClient, ACCESS_COLUMNS, ACR_COLUMNS } = require(join(root, "dist-main", "main", "powerbi-query.js"));
+    const acrPayload = (columns, rows) => {
+      let group = 0, measure = 0;
+      const schema = columns.map(column => ({ N: column.measure ? `M${measure++}` : `G${group++}` }));
+      return Response.json({ results: [{ result: { data: { descriptor: { Select: columns.map(() => ({})) },
+        dsr: { DS: [{ IC: true, PH: [{ DM0: rows.map((C, index) => ({ ...(index ? {} : { S: schema }), C })) }] }] } } } }] });
+    };
+    const acrUser = { username: "demo@example.invalid", name: "Synthetic ACR employee" };
+    const acrQueries = new PowerBiQueryClient(async (_url, options) => {
+      const body = String(options.body);
+      if (body.includes('"modelId":6349452')) return acrPayload(ACCESS_COLUMNS,
+        demoAccounts.slice(0, 2).map(account => [account.tpid, account.name]));
+      if (pauseNextAcr) {
+        pauseNextAcr = false;
+        await new Promise((resolve, reject) => {
+          resumeAcr = resolve;
+          if (options.signal.aborted) reject(options.signal.reason);
+          else options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+        });
+      }
+      if (failAcr && body.includes(`"'${demoAccounts[0].tpid}'"`)) return new Response("", { status: 503 });
+      const rows = body.includes("'FY27'") ? [
+        ["Synthetic account", "FY27-Sep", 100, "Azure", "Compute", "VM", "Size", "SKU"],
+        ["Synthetic account", "FY27-Oct", 125, "Azure", "Compute", "VM", "Size", "SKU"],
+        ["Synthetic account", "FY27-Nov", 25, "Azure", "Compute", "VM", "Size", "SKU"],
+        ["Synthetic account", "FY27-Sep", 90, "Azure", "Data", "SQL", "NA", "-"],
+        ["Synthetic account", "FY27-Oct", 50, "Azure", "Data", "SQL", "NA", "-"],
+      ] : [];
+      return acrPayload(ACR_COLUMNS, rows);
+    }, 180000, async () => undefined);
+    acrService = new AcrService(milestoneStore, {
+      status: async () => ({ connected: acrConnected, user: acrConnected ? acrUser : null,
+        error: acrConnected ? null : "Connect Power BI before fetching." }),
+      connect: async () => { acrConnected = true; return acrUser; },
+      disconnect: async () => { acrConnected = false; },
+      getToken: async () => {
+        if (!acrConnected) throw new Error("Connect Power BI before fetching.");
+        return { token: "synthetic-ui-powerbi-token", user: acrUser };
+      },
+    }, async () => signedIn ? { key: "synthetic-acr-employee", upn: acrUser.username, name: acrUser.name } : null,
+    () => milestoneService.listAccounts().map(account => ({ id: account.id, name: account.name, tpid: account.tpid })),
+    acrQueries, () => new Date("2026-11-12T12:00:00Z"));
+    ipcMain.handle(IPC.acrState, () => acrService.getState());
+    ipcMain.handle(IPC.acrConnect, () => acrService.connect());
+    ipcMain.handle(IPC.acrDisconnect, () => acrService.disconnect());
+    ipcMain.handle(IPC.acrFetch, event => acrService.fetch(progress => event.sender.send(IPC.acrProgress, progress)));
+    ipcMain.handle(IPC.acrCancel, () => acrService.cancel());
     const { milestoneSummary } = require(join(root, "dist-main", "domain", "diff.js"));
     milestoneStore.put("settings", "default", savedSettings);
     for (const account of demoAccounts) {
@@ -1595,6 +1779,26 @@ if (!process.versions.electron) {
         offscreen: Boolean(process.env.MCAPS_SMOKE_SCREENSHOT), backgroundThrottling: false,
       },
     });
+    if (process.env.MCAPS_ACR_SMOKE_ONLY) {
+      signedIn = true;
+      configured = true;
+      await window.loadFile(join(root, "dist-renderer", "index.html"));
+      await wait(() => js("Boolean(document.querySelector('.sidebar'))"));
+      await checkAcr();
+      await click("Settings");
+      await wait(() => js("Boolean(document.querySelector('.appearance-settings input'))"));
+      const theme = await js("document.documentElement.dataset.theme");
+      await js(`document.querySelector('.appearance-settings input[value="${theme === "light" ? "dark" : "light"}"]').click()`);
+      await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
+      window.webContents.debugger.attach("1.3");
+      await checkAcr();
+      console.log("ACR-only UI smoke passed in both themes.");
+      window.destroy();
+      await new Promise(resolve => setImmediate(resolve));
+      milestoneStore.close();
+      app.exit(0);
+      return;
+    }
     if (process.env.MCAPS_ORG_SMOKE_ONLY) {
       signedIn = true;
       configured = true;
@@ -1673,6 +1877,7 @@ if (!process.versions.electron) {
     assert.equal(await js("document.querySelector('.sidebar-link-active').getAttribute('aria-label')"), "Overview", "Overview is the default signed-in landing page");
     assert.equal(await js("document.querySelector('.sidebar-list button').getAttribute('aria-label')"), "Overview", "Overview comes before Portfolio");
     await checkOverview();
+    await checkAcr();
     await checkPortfolioCards();
     await checkAllChangesSpacing();
     window.webContents.debugger.attach("1.3");
@@ -1706,6 +1911,7 @@ if (!process.versions.electron) {
     await js(`document.querySelector('.appearance-settings input[value="${theme === "light" ? "dark" : "light"}"]').click()`);
     await wait(() => js(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`));
     await checkOverview();
+    await checkAcr();
     await click("Portfolio");
     await wait(() => js("Boolean(document.querySelector('.portfolio-summary-grid'))"));
     await checkPortfolioCards();
@@ -1769,7 +1975,7 @@ if (!process.versions.electron) {
     assert.equal(await js("document.querySelector('.sidebar button[aria-label=\"Team\"]') === null"), true, "Reset restores Team off");
     assert.equal(await js("Boolean(document.querySelector('.sidebar button[aria-label=\"PODs\"]'))"), true, "Reset restores PODs on");
     assert.equal(territoryRefreshes, 1, "Legacy territory metadata is loaded once and reused across workspace navigation");
-    console.log("MCAPS UI smoke passed: organization discovery/progress, Work IQ gating, local CRUD, persistence, org filters and XLSX; milestones workspace, grouping, column preferences, Team/PODs and navigation in both themes at three widths; history, live fetch, onboarding, reset and updates.");
+    console.log("MCAPS UI smoke passed: ACR connection, hierarchy, filters, progress, failure/cancellation and persistence; organization discovery/progress, Work IQ gating, local CRUD, org filters and XLSX; milestones, grouping, column preferences, Team/PODs and navigation in both themes at three widths; history, live fetch, onboarding, reset and updates.");
     window.destroy();
     await new Promise(resolve => setImmediate(resolve));
     milestoneStore.close();

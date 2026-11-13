@@ -17,6 +17,8 @@ import { MilestoneExporter } from "./milestone-export";
 import { OrgService } from "./org-service";
 import { enrichOrgDataset } from "../domain/org-milestones";
 import { z } from "zod";
+import { PowerBiAuth } from "./powerbi-auth";
+import { AcrService } from "./acr-service";
 
 // Keep the Chromium profile as well as the encrypted vault across the rename.
 const userDataPath = join(app.getPath("appData"), LEGACY_APP_NAME);
@@ -34,6 +36,7 @@ let ai: AiService | null = null;
 let stoppingOperations = false;
 let milestoneExports: MilestoneExporter | null = null;
 let organization: OrgService | null = null;
+let acr: AcrService | null = null;
 
 function isTrustedRequest(event: IpcMainInvokeEvent): boolean {
   return Boolean(mainWindow && event.sender === mainWindow.webContents &&
@@ -133,10 +136,12 @@ if (singleInstance) {
       },
     });
     organization = org;
+    acr = new AcrService(store, new PowerBiAuth(dataPath), () => auth.getAccountIdentity(),
+      () => portfolio.listAccounts().map(account => ({ id: account.id, name: account.name, tpid: account.tpid })));
     milestoneExports = new MilestoneExporter(async (ids, history) =>
       enrichOrgDataset(history ? portfolio.history.getMilestones(history, ids) : portfolio.getMilestones(ids), await org.getState()),
       () => app.getPath("downloads"), path => shell.showItemInFolder(path));
-    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai, milestoneExports, org);
+    registerIpc(portfolio, auth, msx, dataPath, gate, isTrustedRequest, ai, milestoneExports, org, acr);
     updates = createUpdateRuntime(dataPath, gate, () => mainWindow, isTrustedRequest);
     await createWindow();
   }).catch((error: unknown) => {
@@ -145,11 +150,11 @@ if (singleInstance) {
   });
 
   app.on("before-quit", (event) => {
-    if (ai?.busy || milestoneExports?.busy || organization?.busy) {
+    if (ai?.busy || milestoneExports?.busy || organization?.busy || acr?.busy) {
       event.preventDefault();
       if (!stoppingOperations) {
         stoppingOperations = true;
-        void Promise.all([organization?.cancel(), ai?.disconnect(), milestoneExports?.waitForIdle()]).then(() => app.quit()).catch(() => {
+        void Promise.all([acr?.cancel(), organization?.cancel(), ai?.disconnect(), milestoneExports?.waitForIdle()]).then(() => app.quit()).catch(() => {
           console.error("OPERATION_SHUTDOWN_FAILED");
           stoppingOperations = false;
         });

@@ -12,6 +12,7 @@ export type AccountTab = "dashboard" | "milestones" | "changes" | "history";
 export type Route =
   | { name: "overview" }
   | { name: "portfolio" }
+  | { name: "acr" }
   | { name: "milestones" }
   | { name: "changes" }
   | { name: "team" }

@@ -2864,3 +2864,47 @@ legend {
   .hygiene-drilldown { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .hygiene-tile { transition: none; } .hygiene-tile:hover { transform: none; } }
+
+.acr-page { display: grid; gap: 18px; min-width: 0; }
+.acr-page .page-header { margin-bottom: 0; }
+.acr-connection { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.acr-connection .status-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--color-text-secondary); }
+.acr-connection .status-dot.connected { background: var(--color-positive); box-shadow: 0 0 0 3px var(--color-positive-bg); }
+.acr-interface-notice { font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; }
+.acr-interface-notice summary { cursor: pointer; }
+.acr-filters { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)) minmax(180px, 1.4fr) minmax(130px, .8fr); gap: 12px; }
+.acr-filters .field { min-width: 0; }
+.acr-shaping { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+.acr-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.acr-kpis .stat-value { font-size: clamp(20px, 2.2vw, 30px); }
+.acr-kpis .stat-card { min-width: 0; }
+.acr-kpis .stat-hint { overflow-wrap: anywhere; }
+.acr-meta { color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.acr-refresh-banner, .acr-warning { padding: 14px 18px; border-radius: 12px; background: var(--color-info-bg); color: var(--color-text); font-size: 13px; }
+.acr-warning { background: var(--color-warning-bg); }
+.acr-table-wrap { overflow: auto; max-width: 100%; max-height: 65vh; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-bg-elevated); overscroll-behavior: contain; }
+.acr-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.acr-table th, .acr-table td { min-width: 110px; white-space: nowrap; padding: 11px 14px; text-align: right; border-bottom: 1px solid var(--color-border); font-variant-numeric: tabular-nums; }
+.acr-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-bg-subtle); }
+.acr-table .acr-service { position: sticky; left: 0; z-index: 1; background: var(--color-bg-elevated); text-align: left; min-width: 300px; max-width: 380px; border-right: 1px solid var(--color-border); }
+.acr-table thead .acr-service { z-index: 3; background: var(--color-bg-subtle); }
+.acr-name { display: flex; gap: 8px; align-items: center; }
+.acr-name > span:not(.acr-leaf) { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.acr-name small { color: var(--color-text-secondary); font-size: 9px; font-weight: 400; }
+.acr-toggle { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px; width: 22px; height: 22px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-bg-subtle); color: var(--color-text); cursor: pointer; }
+.acr-leaf { display: inline-block; flex: 0 0 22px; }
+.acr-total th, .acr-total td { font-weight: 700; background: var(--color-info-bg); }
+.acr-table .acr-total .acr-service { background: var(--color-info-bg); }
+.acr-account { font-weight: 650; }
+.acr-table .acr-open { background: var(--color-warning-bg); }
+.acr-open small { display: block; font-size: 9px; color: var(--color-warning); }
+.acr-trend { display: inline-flex; border-radius: 20px; padding: 3px 7px; font-size: 12px; background: var(--color-neutral-bg); color: var(--color-text-secondary); }
+.acr-trend.up { color: var(--color-positive); background: var(--color-positive-bg); }
+.acr-trend.down { color: var(--color-critical); background: var(--color-critical-bg); }
+.acr-issues { padding-left: 20px; font-size: 13px; }
+@media (max-width: 1100px) { .acr-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .acr-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .acr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .acr-table .acr-service { min-width: 240px; max-width: 280px; }
+}

@@ -1,38 +1,12 @@
-import { useMemo, useState } from "react";
-import { Combobox, Field, Option } from "@fluentui/react-components";
+import { useMemo } from "react";
 import type { MilestoneRow } from "../../../shared/types";
 import { FACET_KEYS, SORT_KEYS, type MilestoneFacet, type MilestoneViewState } from "../../../shared/milestones";
-import { deriveFilterOptions, emptyFilters, FACET_LABELS, type FacetOption } from "../../../domain/milestone-view";
+import { deriveFilterOptions, emptyFilters, FACET_LABELS } from "../../../domain/milestone-view";
 import { COLUMN_LABELS } from "../../hooks/useMilestoneColumns";
 import { TextField } from "../ui/TextField";
 import { SelectField } from "../ui/SelectField";
 import { Button } from "../ui/Button";
-
-function FacetPicker({ label, options, selected, onChange }: {
-  label: string; options: FacetOption[]; selected: string[]; onChange: (values: string[]) => void;
-}) {
-  const [query, setQuery] = useState<string | null>(null);
-  const matching = options.filter(option => query === null || option.label.toLowerCase().includes(query.toLowerCase()));
-  const shown = matching.slice(0, 200);
-  const first = options.find(option => option.value === selected[0]);
-  const summary = first ? `${first.label}${selected.length > 1 ? ` (+${selected.length - 1})` : ""}` : "All";
-  return (
-    <Field className="field milestone-facet" label={label}>
-      <Combobox multiselect selectedOptions={selected} value={query ?? summary} placeholder="Search choices"
-        onFocus={() => setQuery("")}
-        onChange={event => setQuery(event.target.value)}
-        onOpenChange={(_event, data) => setQuery(data.open ? "" : null)}
-        onOptionSelect={(_event, data) => onChange(data.selectedOptions)}
-        title={options.filter(option => selected.includes(option.value)).map(option => option.label).join(", ") || summary}>
-        {shown.map(option => <Option key={option.value} value={option.value} text={option.label}>
-          {option.label} ({option.count})
-        </Option>)}
-        {matching.length > shown.length ? <Option disabled value="__more__" text="Type to search all choices">Type to search all {matching.length} choices</Option> : null}
-        {!matching.length ? <Option disabled value="__empty__">No matching choices</Option> : null}
-      </Combobox>
-    </Field>
-  );
-}
+import { FacetPicker } from "../ui/FacetPicker";
 
 export function MilestoneFilterBar({ milestones, value, onChange }: {
   milestones: MilestoneRow[]; value: MilestoneViewState; onChange: (value: MilestoneViewState) => void;

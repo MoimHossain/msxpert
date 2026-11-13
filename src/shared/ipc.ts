@@ -1,4 +1,10 @@
 export const IPC = {
+  acrState: "acr:state",
+  acrConnect: "acr:connect",
+  acrDisconnect: "acr:disconnect",
+  acrFetch: "acr:fetch",
+  acrCancel: "acr:cancel",
+  acrProgress: "acr:progress",
   updateState: "updates:state",
   updateCheck: "updates:check",
   updateDownload: "updates:download",

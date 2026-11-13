@@ -20,10 +20,10 @@ export class AuthRequiredError extends Error {
   constructor() { super("Your MSX session needs attention. Sign in with MSX to continue."); }
 }
 
-class CacheUnlockError extends Error {}
+export class CacheUnlockError extends Error {}
 const CACHE_RECOVERY_MESSAGE = "The protected sign-in cache could not be unlocked. Select Sign in with MSX to replace it.";
 
-function signInFailure(error: unknown): Error {
+export function signInFailure(error: unknown): Error {
   const record = error instanceof Error ? error : null;
   const detail = record && "errorMessage" in record ? String(record.errorMessage) : record?.message ?? "";
   const aad = detail.match(/\bAADSTS\d+\b/)?.[0];
@@ -46,12 +46,13 @@ function atomicWrite(path: string, data: Buffer): void {
   renameSync(temporary, path);
 }
 
-class ProtectedCachePlugin implements ICachePlugin {
+export class ProtectedCachePlugin implements ICachePlugin {
   private readonly path: string;
   needsRecovery = false;
 
-  constructor(dataDirectory: string) {
-    this.path = join(dataDirectory, "msal-cache.bin");
+  constructor(dataDirectory: string, filename = "msal-cache.bin",
+    private readonly recoveryMessage = CACHE_RECOVERY_MESSAGE) {
+    this.path = join(dataDirectory, filename);
   }
 
   async beforeCacheAccess(context: TokenCacheContext): Promise<void> {
@@ -72,12 +73,12 @@ class ProtectedCachePlugin implements ICachePlugin {
     } catch {
       console.error("AUTH_CACHE_UNREADABLE");
       this.needsRecovery = true;
-      throw new CacheUnlockError(CACHE_RECOVERY_MESSAGE);
+      throw new CacheUnlockError(this.recoveryMessage);
     }
   }
 
   async afterCacheAccess(context: TokenCacheContext): Promise<void> {
-    if (this.needsRecovery) throw new CacheUnlockError(CACHE_RECOVERY_MESSAGE);
+    if (this.needsRecovery) throw new CacheUnlockError(this.recoveryMessage);
     if (!context.cacheHasChanged) return;
     if (!safeStorage.isEncryptionAvailable()) {
       throw new Error("Windows data protection is unavailable.");

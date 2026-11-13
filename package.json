@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:updates:smoke": "node scripts/smoke-updates.cjs",
     "test:ai:live": "node scripts/smoke-ai.cjs",
+    "test:acr:live": "node scripts/smoke-acr.cjs",
     "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release-artifacts.ps1",
     "package": "npm run clean:release && npm run build && electron-builder --win nsis --publish never && npm run prepare:updates",
     "package:signed": "npm run clean:release && npm run build && electron-builder --config electron-builder.signed.cjs --win nsis --publish never && npm run prepare:updates",

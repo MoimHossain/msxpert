@@ -15,6 +15,7 @@ import type { OrgService } from "./org-service";
 import { ORG_UNITS, orgDiscoveryModeSchema, orgPersonInputSchema, type OrgProgress } from "../shared/organization";
 import { readOrgCatalog } from "./org-catalog";
 import { enrichOrgDataset, enrichOrgMilestones } from "../domain/org-milestones";
+import type { AcrService } from "./acr-service";
 
 const idSchema = z.string().min(1).max(200);
 const nullableText = z.string().max(4000).nullable();
@@ -119,6 +120,7 @@ export function registerIpc(
   ai: AiService,
   exporter?: MilestoneExporter,
   organization?: OrgService,
+  acr?: AcrService,
 ): void {
   const milestoneExporter = exporter ?? new MilestoneExporter(async (ids, history) => {
     const dataset = history ? service.history.getMilestones(history, ids) : service.getMilestones(ids);
@@ -127,6 +129,10 @@ export function registerIpc(
   const org = () => {
     if (!organization) throw new Error("Organization discovery is unavailable in this runtime.");
     return organization;
+  };
+  const acrService = () => {
+    if (!acr) throw new Error("ACR is unavailable in this runtime.");
+    return acr;
   };
   const connectionIdle = () => {
     if (organization?.busy) throw new Error("Stop organization discovery before changing AI or Work IQ connections.");
@@ -146,6 +152,16 @@ export function registerIpc(
     handle(channel, (input) => handler(schema.parse(input)));
   }
   handle(IPC.bootstrap, () => service.bootstrap(dataPath));
+  handle(IPC.acrState, () => acrService().getState());
+  handle(IPC.acrConnect, () => acrService().connect());
+  handle(IPC.acrDisconnect, () => acrService().disconnect());
+  handle(IPC.acrCancel, () => acrService().cancel());
+  ipcMain.handle(IPC.acrFetch, event => {
+    if (!isTrusted(event)) throw new Error("Untrusted application request.");
+    return gate.run(() => acrService().fetch(progress => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC.acrProgress, progress);
+    }));
+  });
   handle(IPC.aiConnections, () => ai.getState());
   register(IPC.aiTest, aiConfigurationSchema, (config) => { connectionIdle(); return ai.testAi(config); });
   register(IPC.workiqTest, workiqConfigurationSchema, (config) => { connectionIdle(); return ai.testWorkiq(config); });
@@ -185,6 +201,7 @@ export function registerIpc(
       throw new Error("Finish active work or updates before resetting setup.");
     }
     try {
+      if (acr && await auth.getAccountIdentity()) await acr.resetConnection();
       if (organization) await organization.clear();
       await ai.reset();
       return await service.resetSetup(dataPath);
@@ -197,6 +214,7 @@ export function registerIpc(
     return auth.getState(await msx.getMyUserId());
   });
   handle(IPC.signOut, async () => {
+    await acr?.cancel();
     if (organization) await organization.cancel();
     await ai.disconnect();
     const state = await auth.signOut();

@@ -23,6 +23,8 @@ import { Avatar } from "@fluentui/react-components";
 import { FetchProvider } from "./state/FetchProvider";
 import { OrganizationProvider } from "./state/OrganizationProvider";
 import { OverviewView } from "./components/overview/OverviewView";
+import { AcrProvider } from "./state/AcrProvider";
+import { AcrView } from "./components/acr/AcrView";
 
 function StartupUpdates() {
   const { state } = useAppData();
@@ -55,6 +57,8 @@ function RouteOutlet() {
       return <OverviewView />;
     case "portfolio":
       return <PortfolioView />;
+    case "acr":
+      return <AcrView />;
     case "milestones":
       return <MilestonesView />;
     case "changes":
@@ -161,10 +165,12 @@ export function App() {
           <AppDataProvider>
             <FetchProvider>
             <OrganizationProvider>
+            <AcrProvider>
             <NavigationProvider>
               <AppContent />
               <StartupUpdates />
             </NavigationProvider>
+            </AcrProvider>
             </OrganizationProvider>
             </FetchProvider>
           </AppDataProvider>

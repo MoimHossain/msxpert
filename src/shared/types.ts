@@ -386,6 +386,12 @@ export interface BootstrapState {
 }
 
 export interface DesktopApi {
+  getAcrState(): Promise<import("./acr").AcrState>;
+  connectPowerBi(): Promise<import("./acr").AcrState>;
+  disconnectPowerBi(): Promise<import("./acr").AcrState>;
+  fetchAcr(): Promise<import("./acr").AcrState>;
+  cancelAcr(): Promise<void>;
+  onAcrProgress(listener: (progress: import("./acr").AcrProgress) => void): () => void;
   getOrganization(): Promise<import("./organization").OrgState>;
   importOrganizationCatalog(): Promise<import("./organization").OrgImportResult | null>;
   refreshOrganizationLinks(): Promise<import("./organization").OrgState>;

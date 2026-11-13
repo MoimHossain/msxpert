@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { RestartRequest, UpdateState } from "../shared/updates";
 import type { FetchProgress } from "../shared/fetch";
 import type { OrgProgress } from "../shared/organization";
+import type { AcrProgress } from "../shared/acr";
 import type {
   AppSettings,
   DesktopApi,
@@ -14,6 +15,12 @@ import type {
 // Sandboxed preloads cannot require relative modules at runtime, so these
 // channel constants stay self-contained in the compiled preload.
 const IPC = {
+  acrState: "acr:state",
+  acrConnect: "acr:connect",
+  acrDisconnect: "acr:disconnect",
+  acrFetch: "acr:fetch",
+  acrCancel: "acr:cancel",
+  acrProgress: "acr:progress",
   updateState: "updates:state",
   updateCheck: "updates:check",
   updateDownload: "updates:download",
@@ -80,6 +87,16 @@ const IPC = {
 } as const;
 
 const api: DesktopApi = {
+  getAcrState: () => ipcRenderer.invoke(IPC.acrState),
+  connectPowerBi: () => ipcRenderer.invoke(IPC.acrConnect),
+  disconnectPowerBi: () => ipcRenderer.invoke(IPC.acrDisconnect),
+  fetchAcr: () => ipcRenderer.invoke(IPC.acrFetch),
+  cancelAcr: () => ipcRenderer.invoke(IPC.acrCancel),
+  onAcrProgress: listener => {
+    const handler = (_event: IpcRendererEvent, progress: AcrProgress) => listener(progress);
+    ipcRenderer.on(IPC.acrProgress, handler);
+    return () => { ipcRenderer.removeListener(IPC.acrProgress, handler); };
+  },
   getHygieneSnapshot: () => ipcRenderer.invoke(IPC.getHygieneSnapshot),
   getOrganization: () => ipcRenderer.invoke(IPC.organizationState),
   importOrganizationCatalog: () => ipcRenderer.invoke(IPC.organizationImport),

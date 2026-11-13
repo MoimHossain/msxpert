@@ -3,14 +3,14 @@ import { useNavigation } from "../../state/NavigationProvider";
 import { Avatar, Button } from "@fluentui/react-components";
 import {
   ArrowTrendingLines24Regular, Grid24Regular, History24Regular,
-  People24Regular, Settings24Regular, PanelLeftContract24Regular, PanelLeftExpand24Regular, CalendarLtr24Regular, Home24Regular,
+  People24Regular, Settings24Regular, PanelLeftContract24Regular, PanelLeftExpand24Regular, CalendarLtr24Regular, Home24Regular, ChartMultiple24Regular,
 } from "@fluentui/react-icons";
 import { BrandMark } from "./BrandMark";
 import type { UserProfile } from "../../../shared/types";
 
 /** Sidebar links are only the routes with no required parameters; account detail is
  * reached from a portfolio account card instead of from the rail. */
-export type SimpleRouteName = "overview" | "portfolio" | "milestones" | "changes" | "team" | "pods" | "settings";
+export type SimpleRouteName = "overview" | "portfolio" | "acr" | "milestones" | "changes" | "team" | "pods" | "settings";
 
 export interface NavEntry {
   id: SimpleRouteName;
@@ -30,6 +30,7 @@ interface SidebarProps {
 const icons = {
   overview: <Home24Regular />,
   portfolio: <ArrowTrendingLines24Regular />,
+  acr: <ChartMultiple24Regular />,
   milestones: <CalendarLtr24Regular />,
   changes: <History24Regular />,
   team: <People24Regular />,
